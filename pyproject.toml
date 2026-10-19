@@ -18,9 +18,11 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "mutmut>=3.8.0",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.17.1",
 ]
 
@@ -50,3 +52,16 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
+# A hung test fails instead of blocking the run (and counts as a killed mutant).
+timeout = 30
+# 'thread' kills the process even when a test is stuck in Temporal's native code.
+timeout_method = "thread"
+
+[tool.mutmut]
+source_paths = ["src/harness/core/"]
+also_copy = ["tests/", "src/harness/__init__.py"]
+# Each mutant run starts Temporal's test server (seconds), which per-test timing doesn't see.
+timeout_constant = 60.0
+# Temporal's client uses gRPC, which is not fork-safe; fork workers from a clean server.
+process_isolation = "forkserver"
+forkserver_warmup = "none"
