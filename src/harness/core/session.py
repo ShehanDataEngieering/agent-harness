@@ -43,6 +43,7 @@ class SessionWorkflow:
         # The Session's state. It lives only in Temporal's history (no database of our own).
         self._phase = Phase.WORKING
         self._step = 0  # every activity the Session asks for is one step
+        self._guidance: list[str] = []  # filled by the steer Signal, given on the next step
         self._submission = 0  # how many times the work has been handed to a human
         self._rejections = 0  # how many of those Submissions were sent back
         self._reviews: list[Review] = []  # filled by the review Update below
@@ -64,6 +65,7 @@ class SessionWorkflow:
                     task=session.task,
                     step=self._step,
                     rejection_reason=rejection_reason,
+                    guidance=self._take_guidance(),
                     idempotency_key=idempotency_key(session_id, self._step),
                 ),
                 start_to_close_timeout=ACTIVITY_TIMEOUT,
@@ -117,3 +119,12 @@ class SessionWorkflow:
     @workflow.query
     def status(self) -> SessionStatus:
         return SessionStatus(phase=self._phase, step=self._step, submission=self._submission)
+
+    # Signal = a one-way message from outside; the caller gets no answer back.
+    @workflow.signal
+    def steer(self, guidance: str) -> None:
+        self._guidance.append(guidance)  # picked up when the next agent step starts
+
+    # The guidance the next agent step receives.
+    def _take_guidance(self) -> tuple[str, ...]:
+        return tuple(self._guidance)

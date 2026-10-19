@@ -29,6 +29,10 @@ class SessionHandle:
         # pyright strict reports as partially unknown. The single-arg overload used here is typed.
         await self._handle.execute_update(SessionWorkflow.review, review)  # pyright: ignore[reportUnknownMemberType]
 
+    async def steer(self, guidance: str) -> None:
+        """Send extra guidance for the agent's next step (a Signal: no answer comes back)."""
+        await self._handle.signal(SessionWorkflow.steer, guidance)
+
     async def outcome(self) -> SessionOutcome:
         """Wait for the Session to finish and return how it ended."""
         return await self._handle.result()

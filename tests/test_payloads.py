@@ -29,10 +29,20 @@ EXAMPLES: list[Payload] = [
     SessionInput(pack=NOTES, task="Write a note"),
     NOTE,
     AgentRequest(
-        pack=NOTES, task="Write a note", step=1, rejection_reason=None, idempotency_key=KEY
+        pack=NOTES,
+        task="Write a note",
+        step=1,
+        rejection_reason=None,
+        guidance=(),
+        idempotency_key=KEY,
     ),
     AgentRequest(
-        pack=NOTES, task="Write a note", step=2, rejection_reason="Too vague.", idempotency_key=KEY
+        pack=NOTES,
+        task="Write a note",
+        step=2,
+        rejection_reason="Too vague.",
+        guidance=("Use metric units.",),
+        idempotency_key=KEY,
     ),
     Receipt(reference="ledger#1"),
     CommitRequest(pack=NOTES, work=NOTE, idempotency_key=KEY),

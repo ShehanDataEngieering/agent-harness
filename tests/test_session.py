@@ -255,3 +255,25 @@ async def test_a_late_review_for_an_earlier_submission_does_not_decide_the_curre
         2,
         [SECOND_NOTE],
     )
+
+
+async def test_guidance_sent_while_the_agent_works_is_given_to_the_agent_on_its_next_step(
+    client: Client,
+) -> None:
+    agent = FakeAgent(script=[NOTE], hold_at_step=1)
+    deps = Dependencies(agent=agent, packs=[NotesPack(Ledger())])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-steered")
+        async with asyncio.timeout(10):
+            while not agent.requests:  # the agent has started step 1
+                await asyncio.sleep(0.05)
+        await session.steer("Use metric units.")
+        agent.release.set()
+        await until_awaiting_review(session)
+        await session.review(REJECTION)
+        await until_awaiting_review(session, submission=2)
+        await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
+        await session.outcome()
+
+    # step 1 was already running without it; step 2 is the first to receive it
+    assert [request.guidance for request in agent.requests] == [(), ("Use metric units.",)]
