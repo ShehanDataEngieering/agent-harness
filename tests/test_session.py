@@ -228,3 +228,30 @@ async def test_status_shows_the_session_working_on_step_2_while_the_agent_repair
         await session.outcome()
 
     assert status == SessionStatus(phase=Phase.WORKING, step=2, submission=1)
+
+
+async def test_a_late_review_for_an_earlier_submission_does_not_decide_the_current_one(
+    client: Client,
+) -> None:
+    agent = FakeAgent(script=[NOTE, SECOND_NOTE])
+    ledger = Ledger()
+    deps = Dependencies(agent=agent, packs=[NotesPack(ledger)])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-late-review")
+        await until_awaiting_review(session)
+        await session.review(REJECTION)
+        await until_awaiting_review(session, submission=2)
+        # a duplicate Rejection of Submission 1 arrives while Submission 2 waits
+        await session.review(REJECTION)
+        status = await session.status()
+        runs = len(agent.requests)
+        await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
+        async with asyncio.timeout(10):
+            await session.outcome()
+
+    # the late Review was ignored: still waiting on 2 after two agent runs, then 2 is committed
+    assert (status, runs, ledger.entries) == (
+        SessionStatus(phase=Phase.AWAITING_REVIEW, step=2, submission=2),
+        2,
+        [SECOND_NOTE],
+    )

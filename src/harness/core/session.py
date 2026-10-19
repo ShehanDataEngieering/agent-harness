@@ -75,8 +75,9 @@ class SessionWorkflow:
             self._submission += 1
             self._phase = Phase.AWAITING_REVIEW
             self._reviews.clear()
-            await workflow.wait_condition(lambda: bool(self._reviews))
-            review = self._reviews.pop()  # the newest Review answers this Submission
+            # Only a Review naming this Submission counts; Reviews of older ones are ignored.
+            await workflow.wait_condition(lambda: bool(self._reviews_of_this_submission()))
+            review = self._reviews_of_this_submission()[-1]  # the newest one answers it
 
             match review.verdict:
                 case "approval":
@@ -103,6 +104,9 @@ class SessionWorkflow:
                     rejection_reason = review.reason
                 case _:
                     assert_never(review.verdict)  # a new verdict must be handled above
+
+    def _reviews_of_this_submission(self) -> list[Review]:
+        return [review for review in self._reviews if review.submission == self._submission]
 
     # Update = a message from outside that gets an answer back (the caller learns if it worked).
     @workflow.update
