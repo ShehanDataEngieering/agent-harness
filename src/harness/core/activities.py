@@ -11,8 +11,9 @@ Agent and Pack contracts from ports.py. Tests plug in fakes; production plugs in
 from collections.abc import Sequence
 
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
-from harness.core.models import AgentRequest, CommitRequest, Receipt, Work
+from harness.core.models import AgentRequest, CommitRequest, PackName, Receipt, Work
 from harness.core.ports import Agent, Pack
 
 
@@ -24,9 +25,16 @@ class SessionActivities:
     # One agent step: hand the request to the Agent and return the work it produced.
     @activity.defn(name="agent_work")
     async def agent_work(self, request: AgentRequest) -> Work:
+        self._pack(request.pack)
         return await self._agent.work(request)
 
     # Commit approved work through the Session's Pack (the only place real state changes).
     @activity.defn(name="commit_work")
     async def commit_work(self, request: CommitRequest) -> Receipt:
-        return await self._packs[request.pack].commit(request.work, request.idempotency_key)
+        return await self._pack(request.pack).commit(request.work, request.idempotency_key)
+
+    # An unknown Pack can never succeed, so fail the Session instead of retrying.
+    def _pack(self, name: PackName) -> Pack:
+        if name not in self._packs:
+            raise ApplicationError(f"unknown Pack: {name}", non_retryable=True)
+        return self._packs[name]

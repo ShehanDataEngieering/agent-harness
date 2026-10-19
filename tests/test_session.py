@@ -7,9 +7,10 @@ Read the test names first: each one is a line of the spec. Every test has three 
 Tests never reach inside the workflow; that is what lets the code be refactored freely.
 """
 
-from temporalio.client import Client
+import pytest
+from temporalio.client import Client, WorkflowFailureError
 
-from harness.core.models import Phase, SessionStatus
+from harness.core.models import PackName, Phase, SessionStatus
 from harness.core.worker import Dependencies, session_worker
 from tests.fakes import FakeAgent, Ledger, NotesPack, PausingAgent
 from tests.support import APPROVAL, NOTE, SANDBOX, start, until_awaiting_review
@@ -87,3 +88,14 @@ async def test_the_commit_reaches_the_pack_with_the_session_id_and_step_as_its_i
         await session.outcome()
 
     assert ledger.keys == ["session-commit-key:2"]
+
+
+async def test_a_session_for_an_unknown_pack_fails_before_any_work(client: Client) -> None:
+    agent = FakeAgent(script=[NOTE])
+    deps = Dependencies(agent=agent, packs=[NotesPack(Ledger(), name=PackName("other"))])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-unknown-pack")
+        with pytest.raises(WorkflowFailureError):
+            await session.outcome()
+
+    assert agent.requests == []
