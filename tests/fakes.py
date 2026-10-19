@@ -22,13 +22,16 @@ class FakeAgent:
 
     script: list[Work]
     requests: list[AgentRequest] = field(default_factory=list[AgentRequest])
-    hold_at_step: int | None = None
+    hold_at_step: int | None = None  # this step stays working until release is set
     release: asyncio.Event = field(default_factory=asyncio.Event)
+    gate: asyncio.Event | None = None  # if set, each step stays working until the gate opens
 
     async def work(self, request: AgentRequest) -> Work:
         self.requests.append(request)
         if request.step == self.hold_at_step:
             await self.release.wait()
+        if self.gate is not None:
+            await self.gate.wait()
         return self.script[min(len(self.requests), len(self.script)) - 1]
 
 
