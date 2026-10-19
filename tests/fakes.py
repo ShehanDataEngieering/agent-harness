@@ -4,6 +4,7 @@ We fake only what we don't own: the AI model and the system of record a Pack wri
 Our own code (workflow, activities) always runs for real in tests.
 """
 
+import asyncio
 from dataclasses import dataclass, field
 
 from harness.core.models import AgentRequest, IdempotencyKey, PackName, Receipt, Work
@@ -20,6 +21,20 @@ class FakeAgent:
     async def work(self, request: AgentRequest) -> Work:
         self.requests.append(request)
         return self.script[min(len(self.requests), len(self.script)) - 1]
+
+
+@dataclass
+class PausingAgent:
+    """An Agent model that stays mid-step until the test lets it finish."""
+
+    result: Work
+    started: asyncio.Event = field(default_factory=asyncio.Event)
+    finish: asyncio.Event = field(default_factory=asyncio.Event)
+
+    async def work(self, request: AgentRequest) -> Work:
+        self.started.set()
+        await self.finish.wait()
+        return self.result
 
 
 @dataclass

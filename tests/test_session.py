@@ -11,7 +11,7 @@ from temporalio.client import Client
 
 from harness.core.models import Phase, SessionStatus
 from harness.core.worker import Dependencies, session_worker
-from tests.fakes import FakeAgent, Ledger, NotesPack
+from tests.fakes import FakeAgent, Ledger, NotesPack, PausingAgent
 from tests.support import APPROVAL, NOTE, SANDBOX, start, until_awaiting_review
 
 
@@ -43,6 +43,22 @@ async def test_status_shows_the_session_waiting_for_review_on_submission_1_after
         await session.review(APPROVAL)
 
     assert status == SessionStatus(phase=Phase.AWAITING_REVIEW, step=1, submission=1)
+
+
+async def test_status_shows_the_session_working_on_step_1_with_nothing_submitted_yet(
+    client: Client,
+) -> None:
+    agent = PausingAgent(result=NOTE)
+    deps = Dependencies(agent=agent, packs=[NotesPack(Ledger())])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-working")
+        await agent.started.wait()
+        status = await session.status()
+        agent.finish.set()
+        await until_awaiting_review(session)
+        await session.review(APPROVAL)
+
+    assert status == SessionStatus(phase=Phase.WORKING, step=1, submission=0)
 
 
 async def test_an_agent_step_carries_the_session_id_and_step_as_its_idempotency_key(
