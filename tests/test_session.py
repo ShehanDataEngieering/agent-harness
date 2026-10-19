@@ -7,13 +7,23 @@ Read the test names first: each one is a line of the spec. Every test has three 
 Tests never reach inside the workflow; that is what lets the code be refactored freely.
 """
 
+import asyncio
+
 import pytest
 from temporalio.client import Client, WorkflowFailureError
 
-from harness.core.models import PackName, Phase, SessionStatus
+from harness.core.models import PackName, Phase, Review, SessionOutcome, SessionStatus
 from harness.core.worker import Dependencies, session_worker
 from tests.fakes import FakeAgent, Ledger, NotesPack, PausingAgent, PausingPack
-from tests.support import APPROVAL, NOTE, SANDBOX, start, until_awaiting_review
+from tests.support import (
+    APPROVAL,
+    NOTE,
+    REJECTION,
+    SANDBOX,
+    SECOND_NOTE,
+    start,
+    until_awaiting_review,
+)
 
 
 async def test_an_approved_submission_completes_the_session_as_approved_with_the_work_committed(
@@ -116,3 +126,62 @@ async def test_a_session_for_an_unknown_pack_fails_before_any_work(client: Clien
             await session.outcome()
 
     assert agent.requests == []
+
+
+async def test_a_rejected_submission_returns_to_the_agent_with_the_reason(
+    client: Client,
+) -> None:
+    agent = FakeAgent(script=[NOTE])
+    deps = Dependencies(agent=agent, packs=[NotesPack(Ledger())])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-rejected")
+        await until_awaiting_review(session)
+        await session.review(REJECTION)
+        await until_awaiting_review(session, submission=2)
+        await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
+        await session.outcome()
+
+    assert [request.rejection_reason for request in agent.requests] == [None, "Too vague."]
+
+
+async def test_the_resubmitted_work_is_submission_2(client: Client) -> None:
+    ledger = Ledger()
+    deps = Dependencies(agent=FakeAgent(script=[NOTE, SECOND_NOTE]), packs=[NotesPack(ledger)])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-resubmitted")
+        await until_awaiting_review(session)
+        await session.review(REJECTION)
+        await until_awaiting_review(session, submission=2)
+        status = await session.status()
+        await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
+        await session.outcome()
+
+    # the Submission it waits on is 2, and approving it commits the second try, not the first
+    assert (status, ledger.entries) == (
+        SessionStatus(phase=Phase.AWAITING_REVIEW, step=2, submission=2),
+        [SECOND_NOTE],
+    )
+
+
+async def test_the_third_rejection_ends_the_session_as_given_up_with_nothing_committed(
+    client: Client,
+) -> None:
+    agent = FakeAgent(script=[NOTE])
+    ledger = Ledger()
+    deps = Dependencies(agent=agent, packs=[NotesPack(ledger)])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-given-up")
+        for submission in (1, 2, 3):
+            await until_awaiting_review(session, submission=submission)
+            await session.review(
+                Review(submission=submission, verdict="rejection", reviewer="owner", reason="No.")
+            )
+        async with asyncio.timeout(10):  # a Session that never gives up fails here, not hangs
+            outcome = await session.outcome()
+
+    # it stopped after three tries: no fourth agent step and nothing in the ledger
+    assert (outcome, len(agent.requests), ledger.entries) == (
+        SessionOutcome(phase=Phase.GAVE_UP, receipt=None),
+        3,
+        [],
+    )

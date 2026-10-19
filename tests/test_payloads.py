@@ -20,7 +20,7 @@ from harness.core.models import (
     SessionOutcome,
     SessionStatus,
 )
-from tests.support import APPROVAL, NOTE, NOTES
+from tests.support import APPROVAL, NOTE, NOTES, REJECTION
 
 KEY = IdempotencyKey("session-1:1")
 
@@ -28,13 +28,19 @@ KEY = IdempotencyKey("session-1:1")
 EXAMPLES: list[Payload] = [
     SessionInput(pack=NOTES, task="Write a note"),
     NOTE,
-    AgentRequest(pack=NOTES, task="Write a note", step=1, idempotency_key=KEY),
+    AgentRequest(
+        pack=NOTES, task="Write a note", step=1, rejection_reason=None, idempotency_key=KEY
+    ),
+    AgentRequest(
+        pack=NOTES, task="Write a note", step=2, rejection_reason="Too vague.", idempotency_key=KEY
+    ),
     Receipt(reference="ledger#1"),
     CommitRequest(pack=NOTES, work=NOTE, idempotency_key=KEY),
     APPROVAL,
+    REJECTION,
     SessionStatus(phase=Phase.AWAITING_REVIEW, step=1, submission=1),
     SessionOutcome(phase=Phase.APPROVED, receipt=Receipt(reference="ledger#1")),
-    SessionOutcome(phase=Phase.APPROVED, receipt=None),
+    SessionOutcome(phase=Phase.GAVE_UP, receipt=None),
 ]
 
 
