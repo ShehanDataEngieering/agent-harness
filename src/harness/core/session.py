@@ -1,6 +1,6 @@
 """BRAIN: the step-by-step story of one Session.
 
-Read `run()` as three steps: ask the agent -> wait for the human -> commit the work.
+Read `run()` as three stages: ask the agent and run Checks -> wait for Review -> commit.
 A Rejection loops back to step 1 with the human's reason; the third one gives up.
 Work that fails a Check loops back to step 1 with the failures; the step limit gives up.
 
@@ -33,7 +33,7 @@ with workflow.unsafe.imports_passed_through():
         idempotency_key,
     )
 
-# How long one activity (one agent step, one commit) may run before Temporal retries it.
+# How long an activity attempt (agent work, Checks or commit) may run before a timeout.
 ACTIVITY_TIMEOUT = timedelta(minutes=2)
 
 # How many times a human may send the work back before the Session gives up (spec: Limits).

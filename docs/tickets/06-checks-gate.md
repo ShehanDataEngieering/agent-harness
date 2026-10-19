@@ -14,8 +14,7 @@ The Pack's Checks run after each agent step. A failing Check sends the failures 
 
 ## Notes
 
-- The Check activity shares the step number (and idempotency key) of the agent step whose work it checks, so a step is still "one agent step" and the commit stays at step N+1.
-- The step limit is `SessionInput.max_steps` (default `MAX_STEPS = 30`, spec: Limits). Before the commit, the step count equals the agent steps taken, so the limit compares against it directly.
+Step accounting and the configurable agent step limit are defined in the [spec's implementation decisions](../spec.md#implementation-decisions).
 
 ## Mutation notes
 
