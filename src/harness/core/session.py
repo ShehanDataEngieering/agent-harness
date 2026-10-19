@@ -46,6 +46,7 @@ class SessionWorkflow:
         self._submission = 0  # how many times the work has been handed to a human
         self._rejections = 0  # how many of those Submissions were sent back
         self._reviews: list[Review] = []  # filled by the review Update below
+        self._cancelled = False  # set by the cancel Signal below
 
     @workflow.run
     async def run(self, session: SessionInput) -> SessionOutcome:
@@ -68,6 +69,8 @@ class SessionWorkflow:
                 ),
                 start_to_close_timeout=ACTIVITY_TIMEOUT,
             )
+            if self._cancelled:  # a Cancel during the step lets the step finish, then ends
+                return self._cancel()
 
             # Step 2: submit the work and wait for a human Review.
             # The wait costs nothing and survives worker restarts; it can last for days.
@@ -76,7 +79,11 @@ class SessionWorkflow:
             self._phase = Phase.AWAITING_REVIEW
             self._reviews.clear()
             # Only a Review naming this Submission counts; Reviews of older ones are ignored.
-            await workflow.wait_condition(lambda: bool(self._reviews_of_this_submission()))
+            await workflow.wait_condition(
+                lambda: bool(self._reviews_of_this_submission()) or self._cancelled
+            )
+            if self._cancelled:
+                return self._cancel()
             review = self._reviews_of_this_submission()[-1]  # the newest one answers it
 
             match review.verdict:
@@ -113,7 +120,17 @@ class SessionWorkflow:
     async def review(self, review: Review) -> None:
         self._reviews.append(review)  # wakes up the wait_condition in Step 2
 
+    # Signal = a one-way message from outside; the caller gets no answer back.
+    @workflow.signal
+    def cancel(self) -> None:
+        self._cancelled = True  # the Session ends at its next decision point
+
     # Query = read-only peek at the Session's state; it never changes anything.
     @workflow.query
     def status(self) -> SessionStatus:
         return SessionStatus(phase=self._phase, step=self._step, submission=self._submission)
+
+    # A Cancel ends the Session as cancelled, with nothing committed.
+    def _cancel(self) -> SessionOutcome:
+        self._phase = Phase.CANCELLED
+        return SessionOutcome(phase=self._phase, receipt=None)

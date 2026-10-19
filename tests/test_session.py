@@ -255,3 +255,39 @@ async def test_a_late_review_for_an_earlier_submission_does_not_decide_the_curre
         2,
         [SECOND_NOTE],
     )
+
+
+async def test_a_cancel_while_waiting_for_review_ends_the_session_as_cancelled_with_nothing_committed(  # noqa: E501 - named after the ticket line
+    client: Client,
+) -> None:
+    ledger = Ledger()
+    deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[NotesPack(ledger)])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-cancel-review")
+        await until_awaiting_review(session)
+        await session.cancel()
+        outcome = await session.outcome()
+
+    assert (outcome, ledger.entries) == (SessionOutcome(phase=Phase.CANCELLED, receipt=None), [])
+
+
+async def test_a_cancel_while_the_agent_is_working_ends_the_session_as_cancelled_after_the_current_step(  # noqa: E501 - named after the ticket line
+    client: Client,
+) -> None:
+    agent = PausingAgent(result=NOTE)
+    ledger = Ledger()
+    deps = Dependencies(agent=agent, packs=[NotesPack(ledger)])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-cancel-working")
+        await agent.started.wait()
+        await session.cancel()
+        agent.finish.set()
+        outcome = await session.outcome()
+        status = await session.status()
+
+    # The step in progress finished (step 1), but nothing was submitted or committed.
+    assert (outcome, status, ledger.entries) == (
+        SessionOutcome(phase=Phase.CANCELLED, receipt=None),
+        SessionStatus(phase=Phase.CANCELLED, step=1, submission=0),
+        [],
+    )

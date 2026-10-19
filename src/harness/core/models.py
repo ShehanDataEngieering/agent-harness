@@ -34,6 +34,7 @@ class Phase(StrEnum):
     COMMITTING = "committing"
     APPROVED = "approved"
     GAVE_UP = "gave_up"  # too many Rejections; nothing was committed
+    CANCELLED = "cancelled"
 
 
 class SessionInput(Payload):
