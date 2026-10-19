@@ -268,6 +268,21 @@ async def test_a_rejection_without_a_reason_is_refused(client: Client) -> None:
         await session.review(APPROVAL)
 
 
+async def test_a_rejection_with_a_blank_reason_is_refused(client: Client) -> None:
+    deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[NotesPack(Ledger())])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-rejection-blank-reason")
+        await until_awaiting_review(session)
+        with pytest.raises(ReviewRefusedError, match="reason"):
+            await session.review(
+                Review(submission=1, verdict="rejection", reviewer="owner", reason=" ")
+            )
+        status = await session.status()
+        await session.review(APPROVAL)
+
+    assert status == SessionStatus(phase=Phase.AWAITING_REVIEW, step=1, submission=1)
+
+
 async def test_a_refused_review_leaves_the_session_unchanged(client: Client) -> None:
     ledger = Ledger()
     deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[NotesPack(ledger)])

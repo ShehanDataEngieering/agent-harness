@@ -138,7 +138,7 @@ class SessionWorkflow:
                 f"the Review names Submission {review.submission}, "
                 f"but Submission {self._submission} is waiting"
             )
-        if review.verdict == "rejection" and review.reason is None:
+        if review.verdict == "rejection" and not (review.reason or "").strip():
             return "a Rejection needs a reason to send back to the agent"
         return None
 

@@ -11,6 +11,7 @@ The review Update validates before it is accepted, and the caller gets the refus
 - [x] a Review naming an old Submission is refused
 - [x] a Review while the agent is still working is refused, and the work is not committed when the agent finishes (found in ticket 01 review; since ticket 02 an early Review is dropped when the next Submission starts, but the caller is still told it succeeded)
 - [x] a Rejection without a reason is refused
+- [x] a Rejection with a blank reason is refused
 - [x] a refused Review leaves the Session unchanged
 
 ## Mutation survivors
