@@ -12,7 +12,7 @@ import asyncio
 import pytest
 from temporalio.client import Client, WorkflowFailureError
 
-from harness.core.models import PackName, Phase, Review, SessionOutcome, SessionStatus
+from harness.core.models import PackName, Phase, Receipt, Review, SessionOutcome, SessionStatus
 from harness.core.worker import Dependencies, session_worker
 from tests.fakes import FakeAgent, Ledger, NotesPack, PausingAgent, PausingPack
 from tests.support import (
@@ -291,3 +291,20 @@ async def test_a_cancel_while_the_agent_is_working_ends_the_session_as_cancelled
         SessionStatus(phase=Phase.CANCELLED, step=1, submission=0),
         [],
     )
+
+
+async def test_a_cancel_after_an_approval_is_too_late_and_the_commit_goes_ahead(
+    client: Client,
+) -> None:
+    pack = PausingPack()
+    deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-cancel-committing")
+        await until_awaiting_review(session)
+        await session.review(APPROVAL)
+        await pack.started.wait()
+        await session.cancel()
+        pack.finish.set()
+        outcome = await session.outcome()
+
+    assert outcome == SessionOutcome(phase=Phase.APPROVED, receipt=Receipt(reference="paused#1"))
