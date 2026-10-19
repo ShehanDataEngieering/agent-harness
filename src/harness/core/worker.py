@@ -30,11 +30,10 @@ class Dependencies:
 async def session_worker(
     client: Client,
     deps: Dependencies,
-    task_queue: str | None = None,
     workflow_runner: WorkflowRunner | None = None,
 ) -> AsyncGenerator[str]:
     """Run a worker for the duration of an `async with` block and yield its task queue."""
-    queue = task_queue or f"harness-{uuid.uuid4()}"  # a fresh queue keeps tests isolated
+    queue = f"harness-{uuid.uuid4()}"  # a fresh queue keeps tests isolated
     activities = SessionActivities(deps.agent, deps.packs)
     async with Worker(
         client,

@@ -56,3 +56,17 @@ class NotesPack:
         self.ledger.entries.append(work)
         self.ledger.keys.append(key)
         return Receipt(reference=f"ledger#{len(self.ledger.entries)}")
+
+
+@dataclass
+class PausingPack:
+    """A Pack whose commit stays in progress until the test lets it finish."""
+
+    name: PackName = NOTES
+    started: asyncio.Event = field(default_factory=asyncio.Event)
+    finish: asyncio.Event = field(default_factory=asyncio.Event)
+
+    async def commit(self, work: Work, key: IdempotencyKey) -> Receipt:
+        self.started.set()
+        await self.finish.wait()
+        return Receipt(reference="paused#1")

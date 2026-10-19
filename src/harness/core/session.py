@@ -66,6 +66,7 @@ class SessionWorkflow:
         await workflow.wait_condition(lambda: self._review is not None)
 
         # Step 3: the human approved, so commit. Only the workflow commits, never the agent.
+        self._phase = Phase.COMMITTING
         self._step += 1
         receipt = await workflow.execute_activity_method(
             SessionActivities.commit_work,

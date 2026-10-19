@@ -31,6 +31,7 @@ class Phase(StrEnum):
 
     WORKING = "working"
     AWAITING_REVIEW = "awaiting_review"
+    COMMITTING = "committing"
     APPROVED = "approved"
 
 
