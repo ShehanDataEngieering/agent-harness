@@ -185,3 +185,25 @@ async def test_the_third_rejection_ends_the_session_as_given_up_with_nothing_com
         3,
         [],
     )
+
+
+async def test_an_extra_review_does_not_answer_the_next_submission(client: Client) -> None:
+    agent = FakeAgent(script=[NOTE])
+    deps = Dependencies(agent=agent, packs=[NotesPack(Ledger())])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-extra-review")
+        await until_awaiting_review(session)
+        # two Rejections of Submission 1 at once: the second lands while the agent repairs
+        await asyncio.gather(
+            session.review(REJECTION),
+            session.review(
+                Review(submission=1, verdict="rejection", reviewer="owner", reason="Too short.")
+            ),
+        )
+        await until_awaiting_review(session, submission=2)
+        await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
+        async with asyncio.timeout(10):
+            await session.outcome()
+
+    # one Rejection, one repair: the extra Review did not also reject Submission 2
+    assert len(agent.requests) == 2

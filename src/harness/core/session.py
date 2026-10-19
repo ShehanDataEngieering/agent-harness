@@ -71,10 +71,12 @@ class SessionWorkflow:
 
             # Step 2: submit the work and wait for a human Review.
             # The wait costs nothing and survives worker restarts; it can last for days.
+            # Reviews that arrived while the agent worked were not about this Submission: drop them.
             self._submission += 1
             self._phase = Phase.AWAITING_REVIEW
+            self._reviews.clear()
             await workflow.wait_condition(lambda: bool(self._reviews))
-            review = self._reviews.pop()  # take it, so the next wait starts empty
+            review = self._reviews.pop()  # the newest Review answers this Submission
 
             match review.verdict:
                 case "approval":
