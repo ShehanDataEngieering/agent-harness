@@ -2,6 +2,7 @@
 
 Read `run()` as three steps: ask the agent -> wait for the human -> commit the work.
 A Rejection loops back to step 1 with the human's reason; the third one gives up.
+Work that fails a Check loops back to step 1 with the failures; the step limit gives up.
 
 This is a Temporal workflow, so it only *decides* what happens next. It never does I/O
 itself (no model calls, no saving): it asks activities to do that (see activities.py).
