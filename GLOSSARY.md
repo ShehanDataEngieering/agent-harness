@@ -73,7 +73,7 @@ The Review verdict that commits a Session's work (in the Process pack, publishes
 The Review verdict that sends the work back to the agent with a reason; a Session allows at most three Rejections before it gives up.
 
 **Cancel**:
-A human ending a Session at any time, without committing anything.
+A human ending a Session at any time, without committing anything. A Cancel after an Approval is too late: the commit goes ahead.
 _Avoid_: Abort, stop
 
 ## Process pack

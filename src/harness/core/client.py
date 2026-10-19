@@ -30,7 +30,10 @@ class SessionHandle:
         await self._handle.execute_update(SessionWorkflow.review, review)  # pyright: ignore[reportUnknownMemberType]
 
     async def cancel(self) -> None:
-        """Cancel the Session (a Signal: one-way, nothing is committed after it)."""
+        """Ends the Session without committing.
+
+        A Cancel after an Approval is too late: the commit goes ahead.
+        """
         await self._handle.signal(SessionWorkflow.cancel)
 
     async def outcome(self) -> SessionOutcome:
