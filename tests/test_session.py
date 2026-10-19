@@ -12,6 +12,7 @@ import asyncio
 import pytest
 from temporalio.client import Client, WorkflowFailureError
 
+from harness.core.client import ReviewRefusedError
 from harness.core.models import PackName, Phase, Review, SessionOutcome, SessionStatus
 from harness.core.worker import Dependencies, session_worker
 from tests.fakes import FakeAgent, Ledger, NotesPack, PausingAgent, PausingPack
@@ -187,26 +188,104 @@ async def test_the_third_rejection_ends_the_session_as_given_up_with_nothing_com
     )
 
 
-async def test_an_extra_review_does_not_answer_the_next_submission(client: Client) -> None:
+async def test_a_second_review_of_the_same_submission_is_refused(client: Client) -> None:
     agent = FakeAgent(script=[NOTE])
     deps = Dependencies(agent=agent, packs=[NotesPack(Ledger())])
     async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
         session = await start(client, task_queue, "session-extra-review")
         await until_awaiting_review(session)
-        # two Rejections of Submission 1 at once: the second lands while the agent repairs
-        await asyncio.gather(
+        # two Rejections of Submission 1 at once: whichever lands second is refused
+        results = await asyncio.gather(
             session.review(REJECTION),
             session.review(
                 Review(submission=1, verdict="rejection", reviewer="owner", reason="Too short.")
             ),
+            return_exceptions=True,
         )
         await until_awaiting_review(session, submission=2)
         await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
         async with asyncio.timeout(10):
             await session.outcome()
 
-    # one Rejection, one repair: the extra Review did not also reject Submission 2
-    assert len(agent.requests) == 2
+    # one accepted, one refused; one repair, so the extra Review did not reject Submission 2
+    assert (sorted(type(result).__name__ for result in results), len(agent.requests)) == (
+        ["NoneType", "ReviewRefusedError"],
+        2,
+    )
+
+
+async def test_a_review_naming_an_old_submission_is_refused(client: Client) -> None:
+    deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[NotesPack(Ledger())])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-old-submission")
+        await until_awaiting_review(session)
+        await session.review(REJECTION)
+        await until_awaiting_review(session, submission=2)
+        with pytest.raises(ReviewRefusedError, match="Submission 2"):
+            await session.review(APPROVAL)  # names Submission 1, but Submission 2 is waiting
+        await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
+
+
+async def test_a_review_while_the_agent_is_working_is_refused_and_the_work_is_not_committed(
+    client: Client,
+) -> None:
+    gate = asyncio.Event()
+    gate.set()  # step 1 runs straight through
+    agent = FakeAgent(script=[NOTE, SECOND_NOTE], gate=gate)
+    ledger = Ledger()
+    deps = Dependencies(agent=agent, packs=[NotesPack(ledger)])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-review-while-working")
+        await until_awaiting_review(session)
+        gate.clear()  # hold the repair step in progress
+        await session.review(REJECTION)
+        try:
+            async with asyncio.timeout(10):
+                while len(agent.requests) < 2:  # the agent is repairing Submission 1
+                    await asyncio.sleep(0.05)
+            with pytest.raises(ReviewRefusedError, match="not waiting"):
+                await session.review(APPROVAL)  # names Submission 1, which the agent is repairing
+        finally:
+            gate.set()  # let the agent finish, even if the Review was wrongly accepted
+        await until_awaiting_review(session, submission=2)
+        committed_when_the_agent_finished = list(ledger.entries)
+        await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
+        await session.outcome()
+
+    # nothing was committed when the agent finished; the real Approval then committed once
+    assert (committed_when_the_agent_finished, ledger.entries) == ([], [SECOND_NOTE])
+
+
+async def test_a_rejection_without_a_reason_is_refused(client: Client) -> None:
+    deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[NotesPack(Ledger())])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-rejection-without-reason")
+        await until_awaiting_review(session)
+        with pytest.raises(
+            ReviewRefusedError, match=r"^a Rejection needs a reason to send back to the agent$"
+        ):
+            await session.review(Review(submission=1, verdict="rejection", reviewer="owner"))
+        await session.review(APPROVAL)
+
+
+async def test_a_refused_review_leaves_the_session_unchanged(client: Client) -> None:
+    ledger = Ledger()
+    deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[NotesPack(ledger)])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-refused-unchanged")
+        await until_awaiting_review(session)
+        with pytest.raises(ReviewRefusedError):
+            await session.review(Review(submission=1, verdict="rejection", reviewer="owner"))
+        status = await session.status()
+        # still waiting on Submission 1, and its real Review is accepted and commits the work
+        await session.review(APPROVAL)
+        outcome = await session.outcome()
+
+    assert (status, outcome.phase, ledger.entries) == (
+        SessionStatus(phase=Phase.AWAITING_REVIEW, step=1, submission=1),
+        Phase.APPROVED,
+        [NOTE],
+    )
 
 
 async def test_status_shows_the_session_working_on_step_2_while_the_agent_repairs(
@@ -228,30 +307,3 @@ async def test_status_shows_the_session_working_on_step_2_while_the_agent_repair
         await session.outcome()
 
     assert status == SessionStatus(phase=Phase.WORKING, step=2, submission=1)
-
-
-async def test_a_late_review_for_an_earlier_submission_does_not_decide_the_current_one(
-    client: Client,
-) -> None:
-    agent = FakeAgent(script=[NOTE, SECOND_NOTE])
-    ledger = Ledger()
-    deps = Dependencies(agent=agent, packs=[NotesPack(ledger)])
-    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
-        session = await start(client, task_queue, "session-late-review")
-        await until_awaiting_review(session)
-        await session.review(REJECTION)
-        await until_awaiting_review(session, submission=2)
-        # a duplicate Rejection of Submission 1 arrives while Submission 2 waits
-        await session.review(REJECTION)
-        status = await session.status()
-        runs = len(agent.requests)
-        await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
-        async with asyncio.timeout(10):
-            await session.outcome()
-
-    # the late Review was ignored: still waiting on 2 after two agent runs, then 2 is committed
-    assert (status, runs, ledger.entries) == (
-        SessionStatus(phase=Phase.AWAITING_REVIEW, step=2, submission=2),
-        2,
-        [SECOND_NOTE],
-    )

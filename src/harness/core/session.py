@@ -10,9 +10,10 @@ from exactly where it was (ADR 0001).
 """
 
 from datetime import timedelta
-from typing import assert_never
+from typing import assert_never, cast
 
 from temporalio import workflow
+from temporalio.exceptions import ApplicationError
 
 # Temporal runs workflow code in a sandbox that blocks anything non-deterministic.
 # Our own models are safe, so we let them through unchanged.
@@ -36,6 +37,9 @@ ACTIVITY_TIMEOUT = timedelta(minutes=2)
 # How many times a human may send the work back before the Session gives up (spec: Limits).
 MAX_REJECTIONS = 3
 
+# The error type a refused Review carries back to the caller (see client.ReviewRefusedError).
+REVIEW_REFUSED = "ReviewRefused"
+
 
 @workflow.defn
 class SessionWorkflow:
@@ -45,7 +49,7 @@ class SessionWorkflow:
         self._step = 0  # every activity the Session asks for is one step
         self._submission = 0  # how many times the work has been handed to a human
         self._rejections = 0  # how many of those Submissions were sent back
-        self._reviews: list[Review] = []  # filled by the review Update below
+        self._review: Review | None = None  # this Submission's Review, set by the Update below
 
     @workflow.run
     async def run(self, session: SessionInput) -> SessionOutcome:
@@ -71,13 +75,11 @@ class SessionWorkflow:
 
             # Step 2: submit the work and wait for a human Review.
             # The wait costs nothing and survives worker restarts; it can last for days.
-            # Reviews that arrived while the agent worked were not about this Submission: drop them.
             self._submission += 1
+            self._review = None
             self._phase = Phase.AWAITING_REVIEW
-            self._reviews.clear()
-            # Only a Review naming this Submission counts; Reviews of older ones are ignored.
-            await workflow.wait_condition(lambda: bool(self._reviews_of_this_submission()))
-            review = self._reviews_of_this_submission()[-1]  # the newest one answers it
+            await workflow.wait_condition(lambda: self._review is not None)
+            review = cast(Review, self._review)  # the wait above guarantees it is set
 
             match review.verdict:
                 case "approval":
@@ -105,13 +107,40 @@ class SessionWorkflow:
                 case _:
                     assert_never(review.verdict)  # a new verdict must be handled above
 
-    def _reviews_of_this_submission(self) -> list[Review]:
-        return [review for review in self._reviews if review.submission == self._submission]
-
     # Update = a message from outside that gets an answer back (the caller learns if it worked).
     @workflow.update
     async def review(self, review: Review) -> None:
-        self._reviews.append(review)  # wakes up the wait_condition in Step 2
+        # Two Reviews in one batch both pass the validator before either is handled,
+        # so check again here: the second one fails instead of overwriting the first.
+        self._refuse_if_invalid(review)
+        self._review = review  # wakes up the wait_condition in Step 2
+
+    # Runs before the Update is accepted: a refused Review never reaches the handler or the
+    # history, so the Session is unchanged and the caller gets the reason.
+    @review.validator
+    def validate_review(self, review: Review) -> None:
+        self._refuse_if_invalid(review)
+
+    # The rules live in plain methods so mutation testing reaches them (it skips decorated ones).
+    def _refuse_if_invalid(self, review: Review) -> None:
+        # An ApplicationError fails only the Update; any other error would fail the workflow task.
+        if (refusal := self._refusal(review)) is not None:
+            raise ApplicationError(refusal, type=REVIEW_REFUSED)
+
+    def _refusal(self, review: Review) -> str | None:
+        """Why this Review cannot be accepted now, or None if it can."""
+        if self._phase != Phase.AWAITING_REVIEW:
+            return f"the Session is not waiting for a Review (it is {self._phase})"
+        if self._review is not None:
+            return f"Submission {self._submission} already has a Review"
+        if review.submission != self._submission:
+            return (
+                f"the Review names Submission {review.submission}, "
+                f"but Submission {self._submission} is waiting"
+            )
+        if review.verdict == "rejection" and review.reason is None:
+            return "a Rejection needs a reason to send back to the agent"
+        return None
 
     # Query = read-only peek at the Session's state; it never changes anything.
     @workflow.query
