@@ -41,6 +41,7 @@ EXAMPLES: list[Payload] = [
     SessionStatus(phase=Phase.AWAITING_REVIEW, step=1, submission=1),
     SessionOutcome(phase=Phase.APPROVED, receipt=Receipt(reference="ledger#1")),
     SessionOutcome(phase=Phase.GAVE_UP, receipt=None),
+    SessionOutcome(phase=Phase.CANCELLED, receipt=None),
 ]
 
 

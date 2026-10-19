@@ -70,7 +70,7 @@ class SessionWorkflow:
                 start_to_close_timeout=ACTIVITY_TIMEOUT,
             )
             if self._cancelled:  # a Cancel during the step lets the step finish, then ends
-                return self._cancel()
+                return self._cancelled_outcome()
 
             # Step 2: submit the work and wait for a human Review.
             # The wait costs nothing and survives worker restarts; it can last for days.
@@ -82,8 +82,8 @@ class SessionWorkflow:
             await workflow.wait_condition(
                 lambda: bool(self._reviews_of_this_submission()) or self._cancelled
             )
-            if self._cancelled:
-                return self._cancel()
+            if self._cancelled:  # checked first, so a Cancel beside an Approval commits nothing
+                return self._cancelled_outcome()
             review = self._reviews_of_this_submission()[-1]  # the newest one answers it
 
             match review.verdict:
@@ -131,6 +131,6 @@ class SessionWorkflow:
         return SessionStatus(phase=self._phase, step=self._step, submission=self._submission)
 
     # A Cancel ends the Session as cancelled, with nothing committed.
-    def _cancel(self) -> SessionOutcome:
+    def _cancelled_outcome(self) -> SessionOutcome:
         self._phase = Phase.CANCELLED
         return SessionOutcome(phase=self._phase, receipt=None)
