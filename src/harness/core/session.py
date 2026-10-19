@@ -125,6 +125,8 @@ class SessionWorkflow:
     def steer(self, guidance: str) -> None:
         self._guidance.append(guidance)  # picked up when the next agent step starts
 
-    # The guidance the next agent step receives.
+    # Hand over the waiting guidance and forget it, so each piece reaches the agent once.
     def _take_guidance(self) -> tuple[str, ...]:
-        return tuple(self._guidance)
+        guidance = tuple(self._guidance)
+        self._guidance.clear()
+        return guidance

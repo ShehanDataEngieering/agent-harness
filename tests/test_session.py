@@ -277,3 +277,26 @@ async def test_guidance_sent_while_the_agent_works_is_given_to_the_agent_on_its_
 
     # step 1 was already running without it; step 2 is the first to receive it
     assert [request.guidance for request in agent.requests] == [(), ("Use metric units.",)]
+
+
+async def test_guidance_is_given_once_not_repeated_on_later_steps(client: Client) -> None:
+    agent = FakeAgent(script=[NOTE], hold_at_step=1)
+    deps = Dependencies(agent=agent, packs=[NotesPack(Ledger())])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-steered-once")
+        async with asyncio.timeout(10):
+            while not agent.requests:  # the agent has started step 1
+                await asyncio.sleep(0.05)
+        await session.steer("Use metric units.")
+        agent.release.set()
+        for submission in (1, 2):
+            await until_awaiting_review(session, submission=submission)
+            await session.review(
+                Review(submission=submission, verdict="rejection", reviewer="owner", reason="No.")
+            )
+        await until_awaiting_review(session, submission=3)
+        await session.review(Review(submission=3, verdict="approval", reviewer="owner"))
+        await session.outcome()
+
+    # step 2 received it; step 3 did not get it again
+    assert [request.guidance for request in agent.requests] == [(), ("Use metric units.",), ()]
