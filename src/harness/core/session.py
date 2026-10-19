@@ -38,6 +38,11 @@ ACTIVITY_TIMEOUT = timedelta(minutes=2)
 MAX_REJECTIONS = 3
 
 
+# Before the commit, the step count is the number of agent steps taken.
+def out_of_steps(steps: int, max_steps: int) -> bool:
+    return steps >= max_steps
+
+
 @workflow.defn
 class SessionWorkflow:
     def __init__(self) -> None:
@@ -57,6 +62,11 @@ class SessionWorkflow:
         rejection_reason: str | None = None
         check_failures: tuple[str, ...] = ()
         while True:
+            # The step limit stops endless repair: give up instead of taking another step.
+            if out_of_steps(self._step, session.max_steps):
+                self._phase = Phase.GAVE_UP
+                return SessionOutcome(phase=self._phase, receipt=None)
+
             # Step 1: ask the agent to do the Task (with the reason, if it was sent back).
             self._phase = Phase.WORKING
             self._step += 1

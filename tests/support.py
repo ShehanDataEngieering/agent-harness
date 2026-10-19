@@ -6,7 +6,7 @@ from temporalio.client import Client
 from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner, SandboxRestrictions
 
 from harness.core.client import SessionHandle, start_session
-from harness.core.models import PackName, Phase, Review, SessionId, SessionInput, Work
+from harness.core.models import MAX_STEPS, PackName, Phase, Review, SessionId, SessionInput, Work
 
 # Mutation testing injects `mutmut` trampolines into workflow code; they read os.environ.
 # Passing the module through keeps the determinism sandbox on for everything else.
@@ -22,10 +22,12 @@ APPROVAL = Review(submission=1, verdict="approval", reviewer="owner")
 REJECTION = Review(submission=1, verdict="rejection", reviewer="owner", reason="Too vague.")
 
 
-async def start(client: Client, task_queue: str, session_id: str) -> SessionHandle:
+async def start(
+    client: Client, task_queue: str, session_id: str, max_steps: int = MAX_STEPS
+) -> SessionHandle:
     return await start_session(
         client,
-        SessionInput(pack=NOTES, task="Write a note"),
+        SessionInput(pack=NOTES, task="Write a note", max_steps=max_steps),
         session_id=SessionId(session_id),
         task_queue=task_queue,
     )

@@ -290,3 +290,21 @@ async def test_the_check_failures_are_given_to_the_agent_on_its_next_step(client
         (),
         ("The note is empty.",),
     ]
+
+
+async def test_a_session_that_reaches_the_step_limit_ends_as_given_up(client: Client) -> None:
+    agent = FakeAgent(script=[BLANK_NOTE])  # its note fails the Check on every step
+    ledger = Ledger()
+    pack = CheckedNotesPack(ledger, failures={"": ("The note is empty.",)})
+    deps = Dependencies(agent=agent, packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-step-limit", max_steps=3)
+        async with asyncio.timeout(10):  # a Session that repairs forever fails here, not hangs
+            outcome = await session.outcome()
+
+    # three agent steps, then it gave up: nothing submitted, nothing committed
+    assert (outcome, len(agent.requests), ledger.entries) == (
+        SessionOutcome(phase=Phase.GAVE_UP, receipt=None),
+        3,
+        [],
+    )
