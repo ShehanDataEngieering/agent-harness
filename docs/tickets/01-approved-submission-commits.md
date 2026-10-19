@@ -13,9 +13,10 @@ The tracer bullet. A Session starts, the FakeAgent produces work, Checks pass, t
 - [x] status shows the Session waiting for Review on Submission 1 after step 1
 - [x] an agent step carries the Session ID and step as its idempotency key
 - [x] the commit reaches the Pack with the Session ID and step as its idempotency key
+- [x] a Session for an unknown Pack fails before any work
 - [x] every workflow and activity model round-trips through the data converter unchanged (Payload seam)
 
 ## Evidence
 
-- `make check`: ruff, pyright strict (0 errors), 15 tests passed.
-- Mutation testing on `src/harness/core/`: 25/25 mutants killed.
+- `make check`: ruff, pyright strict (0 errors), 16 tests passed.
+- Mutation testing on `src/harness/core/` is partial. mutmut 3.8 does not generate mutants for decorated methods, so `SessionWorkflow.run`/`review`/`status` and the activity methods were not mutation-tested. The 25/25 killed result covered only undecorated core code (constructors, `SessionHandle`, `start_session`, `idempotency_key`) and was measured before the unknown-Pack fix. Closing this gap is tracked in [ticket 17](17-ci-and-mutation.md).
