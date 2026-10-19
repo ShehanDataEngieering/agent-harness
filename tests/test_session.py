@@ -22,6 +22,7 @@ from tests.support import (
     SANDBOX,
     SECOND_NOTE,
     start,
+    until_agent_on_step,
     until_awaiting_review,
 )
 
@@ -264,9 +265,7 @@ async def test_guidance_sent_while_the_agent_works_is_given_to_the_agent_on_its_
     deps = Dependencies(agent=agent, packs=[NotesPack(Ledger())])
     async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
         session = await start(client, task_queue, "session-steered")
-        async with asyncio.timeout(10):
-            while not agent.requests:  # the agent has started step 1
-                await asyncio.sleep(0.05)
+        await until_agent_on_step(agent.requests, 1)
         await session.steer("Use metric units.")
         agent.release.set()
         await until_awaiting_review(session)
@@ -284,9 +283,7 @@ async def test_guidance_is_given_once_not_repeated_on_later_steps(client: Client
     deps = Dependencies(agent=agent, packs=[NotesPack(Ledger())])
     async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
         session = await start(client, task_queue, "session-steered-once")
-        async with asyncio.timeout(10):
-            while not agent.requests:  # the agent has started step 1
-                await asyncio.sleep(0.05)
+        await until_agent_on_step(agent.requests, 1)
         await session.steer("Use metric units.")
         agent.release.set()
         for submission in (1, 2):
