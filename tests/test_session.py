@@ -207,3 +207,24 @@ async def test_an_extra_review_does_not_answer_the_next_submission(client: Clien
 
     # one Rejection, one repair: the extra Review did not also reject Submission 2
     assert len(agent.requests) == 2
+
+
+async def test_status_shows_the_session_working_on_step_2_while_the_agent_repairs(
+    client: Client,
+) -> None:
+    agent = FakeAgent(script=[NOTE], hold_at_step=2)
+    deps = Dependencies(agent=agent, packs=[NotesPack(Ledger())])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-repairing")
+        await until_awaiting_review(session)
+        await session.review(REJECTION)
+        async with asyncio.timeout(10):
+            while len(agent.requests) < 2:  # the agent has started its repair step
+                await asyncio.sleep(0.05)
+        status = await session.status()
+        agent.release.set()
+        await until_awaiting_review(session, submission=2)
+        await session.review(Review(submission=2, verdict="approval", reviewer="owner"))
+        await session.outcome()
+
+    assert status == SessionStatus(phase=Phase.WORKING, step=2, submission=1)
