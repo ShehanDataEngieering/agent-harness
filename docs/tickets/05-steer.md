@@ -4,7 +4,7 @@
 
 ## What
 
-A steer Signal adds guidance that the agent receives on its next step.
+Implement steering as defined in the [Session lifecycle and implementation decisions](../spec.md#session-lifecycle).
 
 ## Acceptance tests
 
@@ -13,7 +13,7 @@ A steer Signal adds guidance that the agent receives on its next step.
 
 ## Notes
 
-- The agent's next step is the next agent activity, which today only follows a Rejection. Guidance that is still waiting when a Submission is approved is never given to the agent; steer is a Signal, so the owner is not told. Revisit when the agent loop takes several steps per Submission (ticket 10).
+- Revisit the [current steering delivery limitation](../spec.md#implementation-decisions) when the agent loop takes several steps per Submission (ticket 10).
 
 ## Mutation notes
 
