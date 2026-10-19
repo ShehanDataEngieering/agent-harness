@@ -4,7 +4,7 @@
 
 ## What
 
-The tracer bullet. A Session starts, the FakeAgent produces work, Checks pass, the Session waits for Review, the owner approves, and the work is committed. Sets up the workflow, the review Update, the status Query, a test Pack, the worker factory and the Temporal test environment.
+The tracer bullet. A Session starts, the FakeAgent produces work, the Session waits for Review (Checks arrive in ticket 06), the owner approves, and the work is committed. Sets up the workflow, the review Update, the status Query, a test Pack, the worker factory and the Temporal test environment.
 
 ## Acceptance tests
 
