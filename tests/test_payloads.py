@@ -11,6 +11,8 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 from harness.core import models
 from harness.core.models import (
     AgentRequest,
+    CheckReport,
+    CheckRequest,
     CommitRequest,
     IdempotencyKey,
     Payload,
@@ -29,12 +31,25 @@ EXAMPLES: list[Payload] = [
     SessionInput(pack=NOTES, task="Write a note"),
     NOTE,
     AgentRequest(
-        pack=NOTES, task="Write a note", step=1, rejection_reason=None, idempotency_key=KEY
+        pack=NOTES,
+        task="Write a note",
+        step=1,
+        rejection_reason=None,
+        check_failures=(),
+        idempotency_key=KEY,
     ),
     AgentRequest(
-        pack=NOTES, task="Write a note", step=2, rejection_reason="Too vague.", idempotency_key=KEY
+        pack=NOTES,
+        task="Write a note",
+        step=2,
+        rejection_reason="Too vague.",
+        check_failures=("The note is empty.",),
+        idempotency_key=KEY,
     ),
     Receipt(reference="ledger#1"),
+    CheckRequest(pack=NOTES, work=NOTE, idempotency_key=KEY),
+    CheckReport(failures=()),
+    CheckReport(failures=("The note is empty.",)),
     CommitRequest(pack=NOTES, work=NOTE, idempotency_key=KEY),
     APPROVAL,
     REJECTION,

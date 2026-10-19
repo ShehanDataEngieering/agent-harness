@@ -20,6 +20,10 @@ class Pack(Protocol):
     @property
     def name(self) -> PackName: ...
 
+    # Run the Pack's Checks on the work and return what failed, empty if all passed.
+    # Checks are deterministic: the same work always gets the same failures.
+    async def check(self, work: Work) -> tuple[str, ...]: ...
+
     # Make approved work real in the Pack's system of record. The key is the same on a
     # retry, so the Pack can make sure the commit lands only once.
     async def commit(self, work: Work, key: IdempotencyKey) -> Receipt: ...

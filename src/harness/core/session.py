@@ -20,6 +20,7 @@ with workflow.unsafe.imports_passed_through():
     from harness.core.activities import SessionActivities
     from harness.core.models import (
         AgentRequest,
+        CheckRequest,
         CommitRequest,
         Phase,
         Review,
@@ -42,7 +43,8 @@ class SessionWorkflow:
     def __init__(self) -> None:
         # The Session's state. It lives only in Temporal's history (no database of our own).
         self._phase = Phase.WORKING
-        self._step = 0  # every activity the Session asks for is one step
+        # Each agent step, and the commit, is one step; Checks share their agent's step.
+        self._step = 0
         self._submission = 0  # how many times the work has been handed to a human
         self._rejections = 0  # how many of those Submissions were sent back
         self._reviews: list[Review] = []  # filled by the review Update below
@@ -53,6 +55,7 @@ class SessionWorkflow:
         session_id = SessionId(workflow.info().workflow_id)
 
         rejection_reason: str | None = None
+        check_failures: tuple[str, ...] = ()
         while True:
             # Step 1: ask the agent to do the Task (with the reason, if it was sent back).
             self._phase = Phase.WORKING
@@ -64,10 +67,25 @@ class SessionWorkflow:
                     task=session.task,
                     step=self._step,
                     rejection_reason=rejection_reason,
+                    check_failures=check_failures,
                     idempotency_key=idempotency_key(session_id, self._step),
                 ),
                 start_to_close_timeout=ACTIVITY_TIMEOUT,
             )
+
+            # Checks gate the Submission: work that fails one goes back to the agent.
+            report = await workflow.execute_activity_method(
+                SessionActivities.check_work,
+                CheckRequest(
+                    pack=session.pack,
+                    work=work,
+                    idempotency_key=idempotency_key(session_id, self._step),
+                ),
+                start_to_close_timeout=ACTIVITY_TIMEOUT,
+            )
+            check_failures = report.failures
+            if check_failures:
+                continue
 
             # Step 2: submit the work and wait for a human Review.
             # The wait costs nothing and survives worker restarts; it can last for days.

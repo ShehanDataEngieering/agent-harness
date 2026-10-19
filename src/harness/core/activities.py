@@ -13,7 +13,15 @@ from collections.abc import Sequence
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from harness.core.models import AgentRequest, CommitRequest, PackName, Receipt, Work
+from harness.core.models import (
+    AgentRequest,
+    CheckReport,
+    CheckRequest,
+    CommitRequest,
+    PackName,
+    Receipt,
+    Work,
+)
 from harness.core.ports import Agent, Pack
 
 
@@ -27,6 +35,11 @@ class SessionActivities:
     async def agent_work(self, request: AgentRequest) -> Work:
         self._pack(request.pack)
         return await self._agent.work(request)
+
+    # Run the Pack's Checks on the agent's work; only work with no failures is submitted.
+    @activity.defn(name="check_work")
+    async def check_work(self, request: CheckRequest) -> CheckReport:
+        return CheckReport(failures=await self._pack(request.pack).check(request.work))
 
     # Commit approved work through the Session's Pack (the only place real state changes).
     @activity.defn(name="commit_work")

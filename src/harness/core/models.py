@@ -57,6 +57,7 @@ class AgentRequest(Payload):
     task: str
     step: int
     rejection_reason: str | None  # why the last Submission was rejected; None on the first try
+    check_failures: tuple[str, ...]  # what the Checks found in the last step's work; () if none
     idempotency_key: IdempotencyKey  # a retry of this step reuses the key
 
 
@@ -72,6 +73,20 @@ class CommitRequest(Payload):
     pack: PackName
     work: Work
     idempotency_key: IdempotencyKey  # passed to the Pack so a retried commit lands once
+
+
+class CheckRequest(Payload):
+    """The agent's latest work, to run through the Pack's Checks."""
+
+    pack: PackName
+    work: Work
+    idempotency_key: IdempotencyKey  # the key of the agent step that produced the work
+
+
+class CheckReport(Payload):
+    """What the Checks found. Empty failures means the work may be submitted."""
+
+    failures: tuple[str, ...]
 
 
 class Review(Payload):

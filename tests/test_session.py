@@ -14,9 +14,10 @@ from temporalio.client import Client, WorkflowFailureError
 
 from harness.core.models import PackName, Phase, Review, SessionOutcome, SessionStatus
 from harness.core.worker import Dependencies, session_worker
-from tests.fakes import FakeAgent, Ledger, NotesPack, PausingAgent, PausingPack
+from tests.fakes import CheckedNotesPack, FakeAgent, Ledger, NotesPack, PausingAgent, PausingPack
 from tests.support import (
     APPROVAL,
+    BLANK_NOTE,
     NOTE,
     REJECTION,
     SANDBOX,
@@ -255,3 +256,37 @@ async def test_a_late_review_for_an_earlier_submission_does_not_decide_the_curre
         2,
         [SECOND_NOTE],
     )
+
+
+async def test_work_that_fails_a_check_is_never_submitted(client: Client) -> None:
+    ledger = Ledger()
+    pack = CheckedNotesPack(ledger, failures={"": ("The note is empty.",)})
+    deps = Dependencies(agent=FakeAgent(script=[BLANK_NOTE, NOTE]), packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-check-failed")
+        await until_awaiting_review(session)
+        status = await session.status()
+        await session.review(APPROVAL)
+        await session.outcome()
+
+    # Submission 1 is the second agent step: the empty note never reached the human
+    assert (status, ledger.entries) == (
+        SessionStatus(phase=Phase.AWAITING_REVIEW, step=2, submission=1),
+        [NOTE],
+    )
+
+
+async def test_the_check_failures_are_given_to_the_agent_on_its_next_step(client: Client) -> None:
+    agent = FakeAgent(script=[BLANK_NOTE, NOTE])
+    pack = CheckedNotesPack(Ledger(), failures={"": ("The note is empty.",)})
+    deps = Dependencies(agent=agent, packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-check-failures-returned")
+        await until_awaiting_review(session)
+        await session.review(APPROVAL)
+        await session.outcome()
+
+    assert [request.check_failures for request in agent.requests] == [
+        (),
+        ("The note is empty.",),
+    ]

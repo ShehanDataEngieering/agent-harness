@@ -6,6 +6,7 @@ Our own code (workflow, activities) always runs for real in tests.
 
 import asyncio
 from dataclasses import dataclass, field
+from typing import override
 
 from harness.core.models import AgentRequest, IdempotencyKey, PackName, Receipt, Work
 from tests.support import NOTES
@@ -60,10 +61,24 @@ class NotesPack:
     ledger: Ledger
     name: PackName = NOTES
 
+    async def check(self, work: Work) -> tuple[str, ...]:
+        return ()
+
     async def commit(self, work: Work, key: IdempotencyKey) -> Receipt:
         self.ledger.entries.append(work)
         self.ledger.keys.append(key)
         return Receipt(reference=f"ledger#{len(self.ledger.entries)}")
+
+
+@dataclass
+class CheckedNotesPack(NotesPack):
+    """A NotesPack whose Checks fail notes with the listed content: same note, same failures."""
+
+    failures: dict[str, tuple[str, ...]] = field(default_factory=dict[str, tuple[str, ...]])
+
+    @override
+    async def check(self, work: Work) -> tuple[str, ...]:
+        return self.failures.get(work.content, ())
 
 
 @dataclass
@@ -73,6 +88,9 @@ class PausingPack:
     name: PackName = NOTES
     started: asyncio.Event = field(default_factory=asyncio.Event)
     finish: asyncio.Event = field(default_factory=asyncio.Event)
+
+    async def check(self, work: Work) -> tuple[str, ...]:
+        return ()
 
     async def commit(self, work: Work, key: IdempotencyKey) -> Receipt:
         self.started.set()

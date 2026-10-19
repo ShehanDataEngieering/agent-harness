@@ -17,6 +17,7 @@ SANDBOX = SandboxedWorkflowRunner(
 NOTES = PackName("notes")
 NOTE = Work(summary="first note", content="Remember the milk.")
 SECOND_NOTE = Work(summary="second note", content="Remember the milk, 2 litres.")
+BLANK_NOTE = Work(summary="blank note", content="")
 APPROVAL = Review(submission=1, verdict="approval", reviewer="owner")
 REJECTION = Review(submission=1, verdict="rejection", reviewer="owner", reason="Too vague.")
 
