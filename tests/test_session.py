@@ -13,7 +13,7 @@ import pytest
 from temporalio.client import Client, WorkflowFailureError
 
 from harness.core.client import ReviewRefusedError
-from harness.core.models import PackName, Phase, Review, SessionOutcome, SessionStatus
+from harness.core.models import PackName, Phase, Receipt, Review, SessionOutcome, SessionStatus
 from harness.core.worker import Dependencies, session_worker
 from tests.fakes import FakeAgent, Ledger, NotesPack, PausingAgent, PausingPack
 from tests.support import (
@@ -322,3 +322,56 @@ async def test_status_shows_the_session_working_on_step_2_while_the_agent_repair
         await session.outcome()
 
     assert status == SessionStatus(phase=Phase.WORKING, step=2, submission=1)
+
+
+async def test_a_cancel_while_waiting_for_review_ends_the_session_as_cancelled_with_nothing_committed(  # noqa: E501 - named after the ticket line
+    client: Client,
+) -> None:
+    ledger = Ledger()
+    deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[NotesPack(ledger)])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-cancel-review")
+        await until_awaiting_review(session)
+        await session.cancel()
+        outcome = await session.outcome()
+
+    assert (outcome, ledger.entries) == (SessionOutcome(phase=Phase.CANCELLED, receipt=None), [])
+
+
+async def test_a_cancel_while_the_agent_is_working_ends_the_session_as_cancelled_after_the_current_step(  # noqa: E501 - named after the ticket line
+    client: Client,
+) -> None:
+    agent = PausingAgent(result=NOTE)
+    ledger = Ledger()
+    deps = Dependencies(agent=agent, packs=[NotesPack(ledger)])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-cancel-working")
+        await agent.started.wait()
+        await session.cancel()
+        agent.finish.set()
+        outcome = await session.outcome()
+        status = await session.status()
+
+    # The step in progress finished (step 1), but nothing was submitted or committed.
+    assert (outcome, status, ledger.entries) == (
+        SessionOutcome(phase=Phase.CANCELLED, receipt=None),
+        SessionStatus(phase=Phase.CANCELLED, step=1, submission=0),
+        [],
+    )
+
+
+async def test_a_cancel_after_an_approval_is_too_late_and_the_commit_goes_ahead(
+    client: Client,
+) -> None:
+    pack = PausingPack()
+    deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-cancel-committing")
+        await until_awaiting_review(session)
+        await session.review(APPROVAL)
+        await pack.started.wait()
+        await session.cancel()
+        pack.finish.set()
+        outcome = await session.outcome()
+
+    assert outcome == SessionOutcome(phase=Phase.APPROVED, receipt=Receipt(reference="paused#1"))

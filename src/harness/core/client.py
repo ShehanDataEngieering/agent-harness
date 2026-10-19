@@ -43,6 +43,10 @@ class SessionHandle:
                 raise ReviewRefusedError(cause.message) from error
             raise
 
+    async def cancel(self) -> None:
+        """Send a Cancel Signal; see GLOSSARY.md's Cancel contract."""
+        await self._handle.signal(SessionWorkflow.cancel)
+
     async def outcome(self) -> SessionOutcome:
         """Wait for the Session to finish and return how it ended."""
         return await self._handle.result()
