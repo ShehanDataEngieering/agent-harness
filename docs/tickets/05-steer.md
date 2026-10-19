@@ -26,3 +26,10 @@ mutmut 3.8: 41 mutants, 40 killed (both `_take_guidance` mutants and all four `S
 Surviving mutant and why it needs no test:
 
 - mutmut's `SessionWorkflow.__init__` `self._phase = None`: equivalent, already noted in ticket 02; `run()` sets the phase before any Query can see it.
+
+## Integration with main
+
+- Resolved the Session test conflict by keeping main's Review refusal contract and the steering tests. The superseded test that expected a stale Review to be silently ignored was removed.
+- `make check`: lint and formatting passed, pyright strict reported zero errors, 31 tests passed.
+- Fresh mutation run: 63 mutants, 60 killed, 3 survived. Both `_take_guidance` mutants and all `SessionHandle.steer` mutants were killed. The three survivors are the existing ticket 03 equivalents: the Review error guard's `and` to `or` (only ReviewRefused ApplicationErrors are raised), initial `_phase = None` (overwritten by `run`), and initial `_review = ""` (reset before awaiting Review).
+- Repeated the three manual steering mutations listed above against the merged code; all three were killed.
