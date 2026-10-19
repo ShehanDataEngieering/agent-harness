@@ -13,13 +13,21 @@ from tests.support import NOTES
 
 @dataclass
 class FakeAgent:
-    """Stands in for the Agent model: returns scripted work, one item per step."""
+    """Stands in for the Agent model: returns scripted work, one item per step.
+
+    With `hold_at_step`, that step waits for `release` to be set, so a test can look at
+    the Session while the agent is still working.
+    """
 
     script: list[Work]
     requests: list[AgentRequest] = field(default_factory=list[AgentRequest])
+    hold_at_step: int | None = None
+    release: asyncio.Event = field(default_factory=asyncio.Event)
 
     async def work(self, request: AgentRequest) -> Work:
         self.requests.append(request)
+        if request.step == self.hold_at_step:
+            await self.release.wait()
         return self.script[min(len(self.requests), len(self.script)) - 1]
 
 

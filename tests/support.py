@@ -16,7 +16,9 @@ SANDBOX = SandboxedWorkflowRunner(
 
 NOTES = PackName("notes")
 NOTE = Work(summary="first note", content="Remember the milk.")
+SECOND_NOTE = Work(summary="second note", content="Remember the milk, 2 litres.")
 APPROVAL = Review(submission=1, verdict="approval", reviewer="owner")
+REJECTION = Review(submission=1, verdict="rejection", reviewer="owner", reason="Too vague.")
 
 
 async def start(client: Client, task_queue: str, session_id: str) -> SessionHandle:
@@ -28,8 +30,11 @@ async def start(client: Client, task_queue: str, session_id: str) -> SessionHand
     )
 
 
-async def until_awaiting_review(session: SessionHandle) -> None:
-    """Poll status until the Session is waiting for a human (gives up after 10 s)."""
+async def until_awaiting_review(session: SessionHandle, submission: int = 1) -> None:
+    """Poll status until the Session waits for a human on this Submission (gives up after 10 s)."""
     async with asyncio.timeout(10):
-        while (await session.status()).phase is not Phase.AWAITING_REVIEW:
+        while True:
+            status = await session.status()
+            if (status.phase, status.submission) == (Phase.AWAITING_REVIEW, submission):
+                return
             await asyncio.sleep(0.05)

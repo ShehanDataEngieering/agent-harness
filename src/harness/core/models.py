@@ -33,6 +33,7 @@ class Phase(StrEnum):
     AWAITING_REVIEW = "awaiting_review"
     COMMITTING = "committing"
     APPROVED = "approved"
+    GAVE_UP = "gave_up"  # too many Rejections; nothing was committed
 
 
 class SessionInput(Payload):
@@ -55,6 +56,7 @@ class AgentRequest(Payload):
     pack: PackName
     task: str
     step: int
+    rejection_reason: str | None  # why the last Submission was rejected; None on the first try
     idempotency_key: IdempotencyKey  # a retry of this step reuses the key
 
 
@@ -76,8 +78,9 @@ class Review(Payload):
     """A human's verdict on one Submission."""
 
     submission: int  # which Submission this Review is about
-    verdict: Literal["approval"]
+    verdict: Literal["approval", "rejection"]
     reviewer: str
+    reason: str | None = None  # why a Rejection sends the work back
 
 
 class SessionStatus(Payload):
