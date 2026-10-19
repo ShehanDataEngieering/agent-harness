@@ -44,10 +44,7 @@ class SessionHandle:
             raise
 
     async def cancel(self) -> None:
-        """Ends the Session without committing.
-
-        A Cancel after an Approval is too late: the commit goes ahead.
-        """
+        """Send a Cancel Signal; see GLOSSARY.md's Cancel contract."""
         await self._handle.signal(SessionWorkflow.cancel)
 
     async def outcome(self) -> SessionOutcome:

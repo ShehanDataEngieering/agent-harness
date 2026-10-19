@@ -14,9 +14,7 @@ A Cancel Signal ends the Session whether it is working or waiting for Review.
 
 ## Known gaps
 
-- Resolved: a Cancel during COMMITTING is accepted but ignored, and the Session ends approved. This is the rule: a Cancel after an Approval is too late, and the commit goes ahead (see GLOSSARY.md, Cancel).
-- Moved to [ticket 03](03-invalid-review-refused.md): a Review sent after a Cancel, before the Session closes, is accepted and then ignored.
-- Moved to [ticket 03](03-invalid-review-refused.md): `SessionHandle.cancel()` on a finished Session raises Temporal's "workflow already completed" error unwrapped.
+See [ticket 03's follow-ups](03-invalid-review-refused.md#follow-ups-from-ticket-04).
 
 ## Evidence
 
