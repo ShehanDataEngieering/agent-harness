@@ -39,7 +39,7 @@ async def session_worker(
         client,
         task_queue=queue,
         workflows=[SessionWorkflow],
-        activities=[activities.agent_work, activities.commit_work],
+        activities=[activities.agent_work, activities.check_work, activities.commit_work],
         # The sandbox catches non-deterministic workflow code; keep it on by default.
         workflow_runner=workflow_runner or SandboxedWorkflowRunner(),
     ):

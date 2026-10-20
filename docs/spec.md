@@ -35,11 +35,11 @@ Roles: **owner** (the human who starts a Session and does Review), **operator** 
 7. As an owner, I end a Session using [Cancel](../GLOSSARY.md#language), subject to its Approval cutoff.
 8. As an owner, my Review is refused if it does not match the current Submission, if the Session is not waiting for Review, or if a Rejection has no reason.
 9. As an operator, a Session continues correctly after its worker is killed, including while it waits for Review.
-10. As an operator, a Session that exceeds its step limit gives up instead of looping forever.
+10. As an operator, a Session that needs another agent step after reaching its step limit gives up instead of looping forever.
 
 ### Checking
 
-11. As an owner, I never receive a Submission that fails a Check; failures go back to the agent.
+11. As an owner, the Pack's Checks run after every agent step; I never receive a Submission that fails a Check, and failures go back to the agent on its next step.
 12. As an owner, a Judgement that raises a concern gives the agent one repair attempt, and the Judgement is attached to the Submission I review.
 13. As an owner, a Judgement never blocks a Submission.
 
@@ -74,11 +74,11 @@ Roles: **owner** (the human who starts a Session and does Review), **operator** 
 
 - Temporal is the only record of Session state (ADR 0001). Model calls, Capabilities, Checks and Judgements run as activities.
 - Review is a Temporal **Update** (it returns success or a refusal); steer and Cancel are **Signals**; status is a **Query**.
-- Steering queues guidance in arrival order for the next agent activity, without repeating it on later steps. Currently another agent activity only follows a Rejection; guidance still queued at Approval is never delivered, and the Signal gives the owner no delivery confirmation.
+- Steering queues guidance in arrival order for the next agent activity, without repeating it on later steps. Another agent activity follows failed Checks or a Rejection; guidance still queued at Approval is never delivered, and the Signal gives the owner no delivery confirmation.
 - Each activity input carries an idempotency key derived from the Session ID and step.
 - Own agent loop and hybrid retrieval, no framework (ADR 0002). Retrieval: BM25 (`tsvector`) plus pgvector, merged by Reciprocal Rank Fusion, embeddings via OpenRouter, cached per Clause.
 - Capabilities use native tool calling; schemas come from Pydantic models.
-- Limits: 30 agent steps per Session, 3 Rejections, 1 Judgement repair per Submission.
+- Limits: 30 agent steps per Session, 3 Rejections, 1 Judgement repair per Submission. Checks share their agent step's number and idempotency key. Work that passes Checks on the final allowed agent step may still be submitted and approved; a repair requiring another agent step ends the Session as given up without a commit. The commit adds one to the step count and does not consume the agent step budget.
 - Storage: Postgres with pgvector and the Temporal dev server, in one `docker-compose.yml`.
 - The core never names a domain concept; domain words live only in Packs.
 

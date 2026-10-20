@@ -13,11 +13,29 @@ import pytest
 from temporalio.client import Client, WorkflowFailureError
 
 from harness.core.client import ReviewRefusedError
-from harness.core.models import PackName, Phase, Receipt, Review, SessionOutcome, SessionStatus
+from harness.core.models import (
+    PackName,
+    Phase,
+    Receipt,
+    Review,
+    SessionOutcome,
+    SessionStatus,
+    Work,
+)
+from harness.core.session import MAX_STEPS
 from harness.core.worker import Dependencies, session_worker
-from tests.fakes import FakeAgent, Ledger, NotesPack, PausingAgent, PausingPack
+from tests.fakes import (
+    CheckedNotesPack,
+    FakeAgent,
+    Ledger,
+    NotesPack,
+    PausingAgent,
+    PausingChecksPack,
+    PausingPack,
+)
 from tests.support import (
     APPROVAL,
+    BLANK_NOTE,
     NOTE,
     REJECTION,
     SANDBOX,
@@ -325,6 +343,58 @@ async def test_status_shows_the_session_working_on_step_2_while_the_agent_repair
     assert status == SessionStatus(phase=Phase.WORKING, step=2, submission=1)
 
 
+async def test_work_that_fails_a_check_is_never_submitted(client: Client) -> None:
+    ledger = Ledger()
+    pack = CheckedNotesPack(ledger, failures={"": ("The note is empty.",)})
+    deps = Dependencies(agent=FakeAgent(script=[BLANK_NOTE, NOTE]), packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-check-failed")
+        await until_awaiting_review(session)
+        status = await session.status()
+        await session.review(APPROVAL)
+        await session.outcome()
+
+    # Submission 1 is the second agent step: the empty note never reached the human
+    assert (status, ledger.entries) == (
+        SessionStatus(phase=Phase.AWAITING_REVIEW, step=2, submission=1),
+        [NOTE],
+    )
+
+
+async def test_the_check_failures_are_given_to_the_agent_on_its_next_step(client: Client) -> None:
+    agent = FakeAgent(script=[BLANK_NOTE, NOTE])
+    pack = CheckedNotesPack(Ledger(), failures={"": ("The note is empty.",)})
+    deps = Dependencies(agent=agent, packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-check-failures-returned")
+        await until_awaiting_review(session)
+        await session.review(APPROVAL)
+        await session.outcome()
+
+    assert [request.check_failures for request in agent.requests] == [
+        (),
+        ("The note is empty.",),
+    ]
+
+
+async def test_a_session_that_reaches_the_step_limit_ends_as_given_up(client: Client) -> None:
+    agent = FakeAgent(script=[BLANK_NOTE])  # its note fails the Check on every step
+    ledger = Ledger()
+    pack = CheckedNotesPack(ledger, failures={"": ("The note is empty.",)})
+    deps = Dependencies(agent=agent, packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-step-limit")
+        async with asyncio.timeout(10):  # a Session that repairs forever fails here, not hangs
+            outcome = await session.outcome()
+
+    # every allowed agent step, then it gave up: nothing submitted, nothing committed
+    assert (outcome, len(agent.requests), ledger.entries) == (
+        SessionOutcome(phase=Phase.GAVE_UP, receipt=None),
+        MAX_STEPS,
+        [],
+    )
+
+
 async def test_a_cancel_while_waiting_for_review_ends_the_session_as_cancelled_with_nothing_committed(  # noqa: E501 - named after the ticket line
     client: Client,
 ) -> None:
@@ -417,3 +487,105 @@ async def test_guidance_is_given_once_not_repeated_on_later_steps(client: Client
 
     # step 2 received it; step 3 did not get it again
     assert [request.guidance for request in agent.requests] == [(), ("Use metric units.",), ()]
+
+
+@pytest.mark.parametrize(
+    ("work", "step"),
+    [(NOTE, 1), (BLANK_NOTE, 1), (BLANK_NOTE, MAX_STEPS)],
+    ids=["passing-check", "failing-check", "failing-check-at-limit"],
+)
+async def test_a_cancel_during_checks_ends_without_another_step_or_submission(
+    client: Client, work: Work, step: int
+) -> None:
+    ledger = Ledger()
+    agent = FakeAgent(script=[work])
+    pack = PausingChecksPack(ledger, failures={"": ("The note is empty.",)}, pause_at=step)
+    deps = Dependencies(agent=agent, packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-cancel-checks")
+        await pack.started.wait()
+        await session.cancel()
+        pack.finish.set()
+        async with asyncio.timeout(10):
+            outcome = await session.outcome()
+        status = await session.status()
+
+    assert (outcome, status, len(agent.requests), ledger.entries) == (
+        SessionOutcome(phase=Phase.CANCELLED, receipt=None),
+        SessionStatus(phase=Phase.CANCELLED, step=step, submission=0),
+        step,
+        [],
+    )
+
+
+async def test_guidance_during_checks_reaches_the_next_repair_once_in_arrival_order(
+    client: Client,
+) -> None:
+    agent = FakeAgent(script=[BLANK_NOTE, BLANK_NOTE, NOTE])
+    ledger = Ledger()
+    pack = PausingChecksPack(ledger, failures={"": ("The note is empty.",)})
+    deps = Dependencies(agent=agent, packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-steer-checks")
+        await pack.started.wait()
+        await session.steer("Use metric units.")
+        await session.steer("Name each owner.")
+        pack.finish.set()
+        await until_awaiting_review(session)
+        await session.review(APPROVAL)
+        await session.outcome()
+
+    assert ([request.guidance for request in agent.requests], ledger.entries) == (
+        [(), ("Use metric units.", "Name each owner."), ()],
+        [NOTE],
+    )
+    assert [request.check_failures for request in agent.requests] == [
+        (),
+        ("The note is empty.",),
+        ("The note is empty.",),
+    ]
+
+
+async def test_passing_checks_on_the_final_allowed_step_can_still_be_approved(
+    client: Client,
+) -> None:
+    agent = FakeAgent(script=[BLANK_NOTE] * (MAX_STEPS - 1) + [NOTE])
+    ledger = Ledger()
+    pack = CheckedNotesPack(ledger, failures={"": ("The note is empty.",)})
+    deps = Dependencies(agent=agent, packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-final-step")
+        await until_awaiting_review(session)
+        await session.review(APPROVAL)
+        outcome = await session.outcome()
+        status = await session.status()
+
+    assert (outcome.phase, status, len(agent.requests), ledger.entries) == (
+        Phase.APPROVED,
+        SessionStatus(phase=Phase.APPROVED, step=MAX_STEPS + 1, submission=1),
+        MAX_STEPS,
+        [NOTE],
+    )
+
+
+async def test_review_during_checks_is_refused_without_changing_the_session(client: Client) -> None:
+    ledger = Ledger()
+    pack = PausingChecksPack(ledger)
+    deps = Dependencies(agent=FakeAgent(script=[NOTE]), packs=[pack])
+    async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
+        session = await start(client, task_queue, "session-review-during-checks")
+        await pack.started.wait()
+        with pytest.raises(ReviewRefusedError, match="not waiting"):
+            await session.review(APPROVAL)
+        status = await session.status()
+        committed_before_checks_finished = list(ledger.entries)
+        pack.finish.set()
+        await until_awaiting_review(session)
+        await session.review(APPROVAL)
+        await session.outcome()
+
+    assert (status, committed_before_checks_finished, ledger.entries) == (
+        SessionStatus(phase=Phase.WORKING, step=1, submission=0),
+        [],
+        [NOTE],
+    )

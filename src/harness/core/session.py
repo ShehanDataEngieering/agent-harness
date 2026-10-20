@@ -1,7 +1,8 @@
 """BRAIN: the step-by-step story of one Session.
 
-Read `run()` as three steps: ask the agent -> wait for the human -> commit the work.
+Read `run()` as three stages: ask the agent and run Checks -> wait for Review -> commit.
 A Rejection loops back to step 1 with the human's reason; the third one gives up.
+Work that fails a Check loops back to step 1 with the failures; the step limit gives up.
 
 This is a Temporal workflow, so it only *decides* what happens next. It never does I/O
 itself (no model calls, no saving): it asks activities to do that (see activities.py).
@@ -21,6 +22,7 @@ with workflow.unsafe.imports_passed_through():
     from harness.core.activities import SessionActivities
     from harness.core.models import (
         AgentRequest,
+        CheckRequest,
         CommitRequest,
         Phase,
         Review,
@@ -32,14 +34,22 @@ with workflow.unsafe.imports_passed_through():
         idempotency_key,
     )
 
-# How long one activity (one agent step, one commit) may run before Temporal retries it.
+# How long an activity attempt (agent work, Checks or commit) may run before a timeout.
 ACTIVITY_TIMEOUT = timedelta(minutes=2)
 
 # How many times a human may send the work back before the Session gives up (spec: Limits).
 MAX_REJECTIONS = 3
 
+# How many agent steps a Session may take before it gives up (spec: Limits).
+MAX_STEPS = 30
+
 # The error type a refused Review carries back to the caller (see client.ReviewRefusedError).
 REVIEW_REFUSED = "ReviewRefused"
+
+
+# Before the commit, the step count is the number of agent steps taken.
+def out_of_steps(steps: int) -> bool:
+    return steps >= MAX_STEPS
 
 
 @workflow.defn
@@ -47,8 +57,9 @@ class SessionWorkflow:
     def __init__(self) -> None:
         # The Session's state. It lives only in Temporal's history (no database of our own).
         self._phase = Phase.WORKING
-        self._step = 0  # every activity the Session asks for is one step
-        self._guidance: list[str] = []  # filled by the steer Signal, given on the next step
+        # Each agent step, and the commit, is one step; Checks share their agent's step.
+        self._step = 0
+        self._guidance: list[str] = []  # filled by steer, given on the next step
         self._submission = 0  # how many times the work has been handed to a human
         self._rejections = 0  # how many of those Submissions were sent back
         self._review: Review | None = None  # this Submission's Review, set by the Update below
@@ -60,7 +71,13 @@ class SessionWorkflow:
         session_id = SessionId(workflow.info().workflow_id)
 
         rejection_reason: str | None = None
+        check_failures: tuple[str, ...] = ()
         while True:
+            # The step limit stops endless repair: give up instead of taking another step.
+            if out_of_steps(self._step):
+                self._phase = Phase.GAVE_UP
+                return SessionOutcome(phase=self._phase, receipt=None)
+
             # Step 1: ask the agent to do the Task (with the reason, if it was sent back).
             self._phase = Phase.WORKING
             self._step += 1
@@ -71,6 +88,7 @@ class SessionWorkflow:
                     task=session.task,
                     step=self._step,
                     rejection_reason=rejection_reason,
+                    check_failures=check_failures,
                     guidance=self._take_guidance(),
                     idempotency_key=idempotency_key(session_id, self._step),
                 ),
@@ -78,6 +96,22 @@ class SessionWorkflow:
             )
             if self._cancelled:  # a Cancel during the step lets the step finish, then ends
                 return self._cancelled_outcome()
+
+            # Checks gate the Submission: work that fails one goes back to the agent.
+            report = await workflow.execute_activity_method(
+                SessionActivities.check_work,
+                CheckRequest(
+                    pack=session.pack,
+                    work=work,
+                    idempotency_key=idempotency_key(session_id, self._step),
+                ),
+                start_to_close_timeout=ACTIVITY_TIMEOUT,
+            )
+            if self._cancelled:  # Checks finish the same step; Cancel prevents repair or Submission
+                return self._cancelled_outcome()
+            check_failures = report.failures
+            if check_failures:
+                continue
 
             # Step 2: submit the work and wait for a human Review.
             # The wait costs nothing and survives worker restarts; it can last for days.
