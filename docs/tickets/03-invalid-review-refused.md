@@ -28,4 +28,3 @@ Not implemented here; found while building Cancel.
 
 - A Review sent after a Cancel is accepted and ignored; it should be refused.
 - `cancel()` on a finished Session raises Temporal's raw error instead of a wrapped one.
-- Decided: a Cancel after an Approval is too late, and the commit goes ahead.

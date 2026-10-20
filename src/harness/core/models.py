@@ -37,6 +37,7 @@ class Phase(StrEnum):
     COMMITTING = "committing"
     APPROVED = "approved"
     GAVE_UP = "gave_up"  # too many Rejections or out of steps; nothing was committed
+    CANCELLED = "cancelled"
 
 
 class SessionInput(Payload):
@@ -62,7 +63,14 @@ class AgentRequest(Payload):
     step: int
     rejection_reason: str | None  # why the last Submission was rejected; None on the first try
     check_failures: tuple[str, ...]  # what the Checks found in the last step's work; () if none
+    guidance: tuple[str, ...]  # steering the human sent since the agent's last step
     idempotency_key: IdempotencyKey  # a retry of this step reuses the key
+
+
+class SteerRequest(Payload):
+    """Extra guidance sent to a Session for its next agent step."""
+
+    guidance: str
 
 
 class Receipt(Payload):

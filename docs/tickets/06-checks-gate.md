@@ -26,8 +26,11 @@ mutmut 3.8: 35 mutants, 34 killed; `out_of_steps` (`>=` → `>`) is killed. The 
 
 ## Integration validation
 
-Merged current main (`b9a9d68`), retaining its explicit refusal of invalid Reviews and the Checks gate. The obsolete test expecting a stale Review to be silently ignored is superseded by main's refusal tests.
+Integrated main at `e4a62ffd`, preserving Cancel, typed steering Signals, Review refusals, and all existing acceptance tests. Resolved conflicts in the ADR, models, workflow, test support, Payload examples, and Session tests.
 
-- `make check`: lint, format, strict typing and 35 tests passed.
-- `uv run mutmut run --max-children 2`: 57 mutants, 54 killed, 3 surviving equivalents already explained in ticket 03 (`review` error wrapper `and` → `or`, initial `_phase = None`, initial `_review = ""`). The Checks step-limit mutant remains killed. Decorated-method limitations and the earlier manual mutation evidence above still apply.
-- Standards and Spec reviews of the integrated diff: no findings.
+- Reproduced three Cancel-during-Checks regressions before the fix: passing work created a Submission, failing work started another agent step, and failure at the step limit returned `gave_up`. Checking Cancel after the Check activity now ends the Session as cancelled before repair or Submission; all three regression cases pass.
+- Added Session-seam coverage for ordered, once-only steering during repeated Check repairs; Review refusal while Checks run; and Approval after passing Checks on the final allowed step.
+- `make check`: lint, formatting, strict typing and 48 tests passed.
+- `uv run mutmut run --max-children 2`: 72 mutants, 68 killed, 4 inherited equivalents. These are the Review wrapper's `and` to `or` (the only ApplicationError from our Update is ReviewRefused), initial `_phase = None` (overwritten by `run`), initial `_review = ""` (reset before awaiting Review), and initial `_cancelled = None` (read only for truthiness).
+- Six manual workflow mutations were all killed: ignoring Cancel after Checks, submitting failed Checks, dropping failure feedback, allowing an extra agent step, dropping steering, and repeating steering. These targeted checks supplement mutmut's decorated-method gap; they do not close ticket 17's full mutation-gate requirement.
+- Matt Pocock's independent Standards and Spec reviews in separate Herdr agents: zero findings on each axis.

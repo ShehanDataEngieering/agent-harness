@@ -85,6 +85,20 @@ class CheckedNotesPack(NotesPack):
 
 
 @dataclass
+class PausingChecksPack(CheckedNotesPack):
+    """A deterministic Check whose response waits for the test's external gate."""
+
+    started: asyncio.Event = field(default_factory=asyncio.Event)
+    finish: asyncio.Event = field(default_factory=asyncio.Event)
+
+    @override
+    async def check(self, work: Work) -> tuple[str, ...]:
+        self.started.set()
+        await self.finish.wait()
+        return await super().check(work)
+
+
+@dataclass
 class PausingPack:
     """A Pack whose commit stays in progress until the test lets it finish."""
 

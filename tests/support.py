@@ -1,12 +1,22 @@
 """Shared test setup, so each test file reads as just its story."""
 
 import asyncio
+from collections.abc import Sequence
 
 from temporalio.client import Client
 from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner, SandboxRestrictions
 
 from harness.core.client import SessionHandle, start_session
-from harness.core.models import MAX_STEPS, PackName, Phase, Review, SessionId, SessionInput, Work
+from harness.core.models import (
+    MAX_STEPS,
+    AgentRequest,
+    PackName,
+    Phase,
+    Review,
+    SessionId,
+    SessionInput,
+    Work,
+)
 
 # Mutation testing injects `mutmut` trampolines into workflow code; they read os.environ.
 # Passing the module through keeps the determinism sandbox on for everything else.
@@ -40,4 +50,11 @@ async def until_awaiting_review(session: SessionHandle, submission: int = 1) -> 
             status = await session.status()
             if (status.phase, status.submission) == (Phase.AWAITING_REVIEW, submission):
                 return
+            await asyncio.sleep(0.05)
+
+
+async def until_agent_on_step(requests: Sequence[AgentRequest], step: int) -> None:
+    """Poll until the agent has started this step (gives up after 10 s)."""
+    async with asyncio.timeout(10):
+        while len(requests) < step:
             await asyncio.sleep(0.05)
