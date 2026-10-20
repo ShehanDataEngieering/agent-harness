@@ -31,7 +31,7 @@ Roles: **owner** (the human who starts a Session and does Review), **operator** 
 3. As an owner, I approve a Submission, and only then is the work committed.
 4. As an owner, I reject a Submission with a reason, and the agent repairs and submits again.
 5. As an owner, after my third Rejection the Session gives up without committing anything.
-6. As an owner, I steer a working Session with extra guidance, and the agent uses it on its next step.
+6. As an owner, I steer a working Session with extra guidance, and the agent receives it once, on its next agent step.
 7. As an owner, I end a Session using [Cancel](../GLOSSARY.md#language), subject to its Approval cutoff.
 8. As an owner, my Review is refused if it does not match the current Submission, if the Session is not waiting for Review, or if a Rejection has no reason.
 9. As an operator, a Session continues correctly after its worker is killed, including while it waits for Review.
@@ -74,6 +74,7 @@ Roles: **owner** (the human who starts a Session and does Review), **operator** 
 
 - Temporal is the only record of Session state (ADR 0001). Model calls, Capabilities, Checks and Judgements run as activities.
 - Review is a Temporal **Update** (it returns success or a refusal); steer and Cancel are **Signals**; status is a **Query**.
+- Steering queues guidance in arrival order for the next agent activity, without repeating it on later steps. Currently another agent activity only follows a Rejection; guidance still queued at Approval is never delivered, and the Signal gives the owner no delivery confirmation.
 - Each activity input carries an idempotency key derived from the Session ID and step.
 - Own agent loop and hybrid retrieval, no framework (ADR 0002). Retrieval: BM25 (`tsvector`) plus pgvector, merged by Reciprocal Rank Fusion, embeddings via OpenRouter, cached per Clause.
 - Capabilities use native tool calling; schemas come from Pydantic models.

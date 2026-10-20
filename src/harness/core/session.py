@@ -28,6 +28,7 @@ with workflow.unsafe.imports_passed_through():
         SessionInput,
         SessionOutcome,
         SessionStatus,
+        SteerRequest,
         idempotency_key,
     )
 
@@ -47,6 +48,7 @@ class SessionWorkflow:
         # The Session's state. It lives only in Temporal's history (no database of our own).
         self._phase = Phase.WORKING
         self._step = 0  # every activity the Session asks for is one step
+        self._guidance: list[str] = []  # filled by the steer Signal, given on the next step
         self._submission = 0  # how many times the work has been handed to a human
         self._rejections = 0  # how many of those Submissions were sent back
         self._review: Review | None = None  # this Submission's Review, set by the Update below
@@ -69,6 +71,7 @@ class SessionWorkflow:
                     task=session.task,
                     step=self._step,
                     rejection_reason=rejection_reason,
+                    guidance=self._take_guidance(),
                     idempotency_key=idempotency_key(session_id, self._step),
                 ),
                 start_to_close_timeout=ACTIVITY_TIMEOUT,
@@ -161,3 +164,14 @@ class SessionWorkflow:
     def _cancelled_outcome(self) -> SessionOutcome:
         self._phase = Phase.CANCELLED
         return SessionOutcome(phase=self._phase, receipt=None)
+
+    # Signal = a one-way message from outside; the caller gets no answer back.
+    @workflow.signal
+    def steer(self, request: SteerRequest) -> None:
+        self._guidance.append(request.guidance)  # picked up when the next agent step starts
+
+    # Hand over the waiting guidance and forget it, so each piece reaches the agent once.
+    def _take_guidance(self) -> tuple[str, ...]:
+        guidance = tuple(self._guidance)
+        self._guidance.clear()
+        return guidance

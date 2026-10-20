@@ -58,7 +58,14 @@ class AgentRequest(Payload):
     task: str
     step: int
     rejection_reason: str | None  # why the last Submission was rejected; None on the first try
+    guidance: tuple[str, ...]  # steering the human sent since the agent's last step
     idempotency_key: IdempotencyKey  # a retry of this step reuses the key
+
+
+class SteerRequest(Payload):
+    """Extra guidance sent to a Session for its next agent step."""
+
+    guidance: str
 
 
 class Receipt(Payload):

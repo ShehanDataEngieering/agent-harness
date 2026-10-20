@@ -19,6 +19,7 @@ from harness.core.models import (
     SessionInput,
     SessionOutcome,
     SessionStatus,
+    SteerRequest,
 )
 from tests.support import APPROVAL, NOTE, NOTES, REJECTION
 
@@ -29,15 +30,26 @@ EXAMPLES: list[Payload] = [
     SessionInput(pack=NOTES, task="Write a note"),
     NOTE,
     AgentRequest(
-        pack=NOTES, task="Write a note", step=1, rejection_reason=None, idempotency_key=KEY
+        pack=NOTES,
+        task="Write a note",
+        step=1,
+        rejection_reason=None,
+        guidance=(),
+        idempotency_key=KEY,
     ),
     AgentRequest(
-        pack=NOTES, task="Write a note", step=2, rejection_reason="Too vague.", idempotency_key=KEY
+        pack=NOTES,
+        task="Write a note",
+        step=2,
+        rejection_reason="Too vague.",
+        guidance=("Use metric units.",),
+        idempotency_key=KEY,
     ),
     Receipt(reference="ledger#1"),
     CommitRequest(pack=NOTES, work=NOTE, idempotency_key=KEY),
     APPROVAL,
     REJECTION,
+    SteerRequest(guidance="Use metric units."),
     SessionStatus(phase=Phase.AWAITING_REVIEW, step=1, submission=1),
     SessionOutcome(phase=Phase.APPROVED, receipt=Receipt(reference="ledger#1")),
     SessionOutcome(phase=Phase.GAVE_UP, receipt=None),

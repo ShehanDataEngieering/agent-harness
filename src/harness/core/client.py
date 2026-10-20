@@ -6,7 +6,14 @@ start_session() starts one; the SessionHandle it returns has a method per thing 
 from temporalio.client import Client, WorkflowHandle, WorkflowUpdateFailedError
 from temporalio.exceptions import ApplicationError
 
-from harness.core.models import Review, SessionId, SessionInput, SessionOutcome, SessionStatus
+from harness.core.models import (
+    Review,
+    SessionId,
+    SessionInput,
+    SessionOutcome,
+    SessionStatus,
+    SteerRequest,
+)
 from harness.core.session import REVIEW_REFUSED, SessionWorkflow
 
 
@@ -46,6 +53,10 @@ class SessionHandle:
     async def cancel(self) -> None:
         """Send a Cancel Signal; see GLOSSARY.md's Cancel contract."""
         await self._handle.signal(SessionWorkflow.cancel)
+
+    async def steer(self, guidance: str) -> None:
+        """Send extra guidance for the agent's next step (a Signal: no answer comes back)."""
+        await self._handle.signal(SessionWorkflow.steer, SteerRequest(guidance=guidance))
 
     async def outcome(self) -> SessionOutcome:
         """Wait for the Session to finish and return how it ended."""
