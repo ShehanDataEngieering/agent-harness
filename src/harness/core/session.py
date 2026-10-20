@@ -28,6 +28,7 @@ with workflow.unsafe.imports_passed_through():
         SessionInput,
         SessionOutcome,
         SessionStatus,
+        SteerRequest,
         idempotency_key,
     )
 
@@ -51,6 +52,7 @@ class SessionWorkflow:
         self._submission = 0  # how many times the work has been handed to a human
         self._rejections = 0  # how many of those Submissions were sent back
         self._review: Review | None = None  # this Submission's Review, set by the Update below
+        self._cancelled = False  # set by the cancel Signal below
 
     @workflow.run
     async def run(self, session: SessionInput) -> SessionOutcome:
@@ -74,13 +76,17 @@ class SessionWorkflow:
                 ),
                 start_to_close_timeout=ACTIVITY_TIMEOUT,
             )
+            if self._cancelled:  # a Cancel during the step lets the step finish, then ends
+                return self._cancelled_outcome()
 
             # Step 2: submit the work and wait for a human Review.
             # The wait costs nothing and survives worker restarts; it can last for days.
             self._submission += 1
             self._review = None
             self._phase = Phase.AWAITING_REVIEW
-            await workflow.wait_condition(lambda: self._review is not None)
+            await workflow.wait_condition(lambda: self._review is not None or self._cancelled)
+            if self._cancelled:  # checked first, so a Cancel beside an Approval commits nothing
+                return self._cancelled_outcome()
             review = cast(Review, self._review)  # the wait above guarantees it is set
 
             match review.verdict:
@@ -144,15 +150,25 @@ class SessionWorkflow:
             return "a Rejection needs a reason to send back to the agent"
         return None
 
+    # Signal = a one-way message from outside; the caller gets no answer back.
+    @workflow.signal
+    def cancel(self) -> None:
+        self._cancelled = True  # the Session ends at its next decision point
+
     # Query = read-only peek at the Session's state; it never changes anything.
     @workflow.query
     def status(self) -> SessionStatus:
         return SessionStatus(phase=self._phase, step=self._step, submission=self._submission)
 
+    # A Cancel ends the Session as cancelled, with nothing committed.
+    def _cancelled_outcome(self) -> SessionOutcome:
+        self._phase = Phase.CANCELLED
+        return SessionOutcome(phase=self._phase, receipt=None)
+
     # Signal = a one-way message from outside; the caller gets no answer back.
     @workflow.signal
-    def steer(self, guidance: str) -> None:
-        self._guidance.append(guidance)  # picked up when the next agent step starts
+    def steer(self, request: SteerRequest) -> None:
+        self._guidance.append(request.guidance)  # picked up when the next agent step starts
 
     # Hand over the waiting guidance and forget it, so each piece reaches the agent once.
     def _take_guidance(self) -> tuple[str, ...]:

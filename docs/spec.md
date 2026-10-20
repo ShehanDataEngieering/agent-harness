@@ -32,7 +32,7 @@ Roles: **owner** (the human who starts a Session and does Review), **operator** 
 4. As an owner, I reject a Submission with a reason, and the agent repairs and submits again.
 5. As an owner, after my third Rejection the Session gives up without committing anything.
 6. As an owner, I steer a working Session with extra guidance, and the agent receives it once, on its next agent step.
-7. As an owner, I Cancel a Session at any time, and nothing is committed.
+7. As an owner, I end a Session using [Cancel](../GLOSSARY.md#language), subject to its Approval cutoff.
 8. As an owner, my Review is refused if it does not match the current Submission, if the Session is not waiting for Review, or if a Rejection has no reason.
 9. As an operator, a Session continues correctly after its worker is killed, including while it waits for Review.
 10. As an operator, a Session that exceeds its step limit gives up instead of looping forever.

@@ -29,7 +29,9 @@ Surviving mutant and why it needs no test:
 
 ## Integration with main
 
-- Resolved the Session test conflict by keeping main's Review refusal contract and the steering tests. The superseded test that expected a stale Review to be silently ignored was removed.
-- `make check`: lint and formatting passed, pyright strict reported zero errors, 31 tests passed.
-- Fresh mutation run: 63 mutants, 60 killed, 3 survived. Both `_take_guidance` mutants and all `SessionHandle.steer` mutants were killed. The three survivors are the existing ticket 03 equivalents: the Review error guard's `and` to `or` (only ReviewRefused ApplicationErrors are raised), initial `_phase = None` (overwritten by `run`), and initial `_review = ""` (reset before awaiting Review).
-- Repeated the three manual steering mutations listed above against the merged code; all three were killed.
+- Integrated main at `771bf764`, including its Cancel handling, Review refusals, and acceptance tests. Resolved conflicts in the client, workflow, Session tests, spec, and ADR without dropping either behavior.
+- Added `SteerRequest(Payload)` to satisfy the strict Pydantic boundary rule. `session.steer("guidance")` wraps the string before sending the Signal; the Payload seam covers its serialization round-trip.
+- `make check`: lint and formatting passed, pyright strict reported zero errors, 36 tests passed.
+- Fresh mutation run: 71 mutants, 67 killed, 4 survived. All generated steering mutants were killed. The four survivors are inherited equivalents: the Review error guard's `and` to `or` (only ReviewRefused ApplicationErrors are raised), initial `_phase = None` (overwritten by `run`), initial `_review = ""` (reset before awaiting Review), and initial `_cancelled = None` (read only for truthiness).
+- Repeated the three manual steering mutations listed above against the typed Signal handler and merged workflow; all three were killed. mutmut still skips decorated handlers, so this is targeted coverage rather than a complete mutation gate (ticket 17).
+- Matt Pocock's Standards review found the missing boundary model, which was fixed; the Standards and Spec rereviews reported no further findings.
