@@ -14,9 +14,6 @@ SessionId = NewType("SessionId", str)
 PackName = NewType("PackName", str)
 IdempotencyKey = NewType("IdempotencyKey", str)
 
-# How many agent steps a Session may take before it gives up (spec: Limits).
-MAX_STEPS = 30
-
 
 def idempotency_key(session_id: SessionId, step: int) -> IdempotencyKey:
     """The one rule for keys: Session ID + step. Same key = same step, never done twice."""
@@ -45,7 +42,6 @@ class SessionInput(Payload):
 
     pack: PackName  # which Pack handles this Session
     task: str  # what the human asked for, in words
-    max_steps: int = MAX_STEPS  # the step limit; tests set a small one
 
 
 class Work(Payload):

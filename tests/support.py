@@ -8,7 +8,6 @@ from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner, SandboxR
 
 from harness.core.client import SessionHandle, start_session
 from harness.core.models import (
-    MAX_STEPS,
     AgentRequest,
     PackName,
     Phase,
@@ -32,12 +31,10 @@ APPROVAL = Review(submission=1, verdict="approval", reviewer="owner")
 REJECTION = Review(submission=1, verdict="rejection", reviewer="owner", reason="Too vague.")
 
 
-async def start(
-    client: Client, task_queue: str, session_id: str, max_steps: int = MAX_STEPS
-) -> SessionHandle:
+async def start(client: Client, task_queue: str, session_id: str) -> SessionHandle:
     return await start_session(
         client,
-        SessionInput(pack=NOTES, task="Write a note", max_steps=max_steps),
+        SessionInput(pack=NOTES, task="Write a note"),
         session_id=SessionId(session_id),
         task_queue=task_queue,
     )

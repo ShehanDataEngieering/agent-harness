@@ -40,13 +40,16 @@ ACTIVITY_TIMEOUT = timedelta(minutes=2)
 # How many times a human may send the work back before the Session gives up (spec: Limits).
 MAX_REJECTIONS = 3
 
+# How many agent steps a Session may take before it gives up (spec: Limits).
+MAX_STEPS = 30
+
 # The error type a refused Review carries back to the caller (see client.ReviewRefusedError).
 REVIEW_REFUSED = "ReviewRefused"
 
 
 # Before the commit, the step count is the number of agent steps taken.
-def out_of_steps(steps: int, max_steps: int) -> bool:
-    return steps >= max_steps
+def out_of_steps(steps: int) -> bool:
+    return steps >= MAX_STEPS
 
 
 @workflow.defn
@@ -71,7 +74,7 @@ class SessionWorkflow:
         check_failures: tuple[str, ...] = ()
         while True:
             # The step limit stops endless repair: give up instead of taking another step.
-            if out_of_steps(self._step, session.max_steps):
+            if out_of_steps(self._step):
                 self._phase = Phase.GAVE_UP
                 return SessionOutcome(phase=self._phase, receipt=None)
 

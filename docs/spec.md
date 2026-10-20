@@ -78,7 +78,7 @@ Roles: **owner** (the human who starts a Session and does Review), **operator** 
 - Each activity input carries an idempotency key derived from the Session ID and step.
 - Own agent loop and hybrid retrieval, no framework (ADR 0002). Retrieval: BM25 (`tsvector`) plus pgvector, merged by Reciprocal Rank Fusion, embeddings via OpenRouter, cached per Clause.
 - Capabilities use native tool calling; schemas come from Pydantic models.
-- Limits: `SessionInput.max_steps` sets the agent step limit (default defined by `MAX_STEPS` in [`core/models.py`](../src/harness/core/models.py)), 3 Rejections, 1 Judgement repair per Submission. Checks share their agent step's number and idempotency key. Work that passes Checks on the final allowed agent step may still be submitted and approved; a repair requiring another agent step ends the Session as given up without a commit. The commit adds one to the step count and does not consume the agent step budget.
+- Limits: 30 agent steps per Session, 3 Rejections, 1 Judgement repair per Submission. Checks share their agent step's number and idempotency key. Work that passes Checks on the final allowed agent step may still be submitted and approved; a repair requiring another agent step ends the Session as given up without a commit. The commit adds one to the step count and does not consume the agent step budget.
 - Storage: Postgres with pgvector and the Temporal dev server, in one `docker-compose.yml`.
 - The core never names a domain concept; domain words live only in Packs.
 

@@ -86,15 +86,19 @@ class CheckedNotesPack(NotesPack):
 
 @dataclass
 class PausingChecksPack(CheckedNotesPack):
-    """A deterministic Check whose response waits for the test's external gate."""
+    """A deterministic Check whose `pause_at` run waits for the test's external gate."""
 
     started: asyncio.Event = field(default_factory=asyncio.Event)
     finish: asyncio.Event = field(default_factory=asyncio.Event)
+    pause_at: int = 1  # the Check run that waits; the others answer at once
+    runs: int = 0
 
     @override
     async def check(self, work: Work) -> tuple[str, ...]:
-        self.started.set()
-        await self.finish.wait()
+        self.runs += 1
+        if self.runs == self.pause_at:
+            self.started.set()
+            await self.finish.wait()
         return await super().check(work)
 
 

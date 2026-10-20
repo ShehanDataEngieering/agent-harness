@@ -22,6 +22,7 @@ from harness.core.models import (
     SessionStatus,
     Work,
 )
+from harness.core.session import MAX_STEPS
 from harness.core.worker import Dependencies, session_worker
 from tests.fakes import (
     CheckedNotesPack,
@@ -382,14 +383,14 @@ async def test_a_session_that_reaches_the_step_limit_ends_as_given_up(client: Cl
     pack = CheckedNotesPack(ledger, failures={"": ("The note is empty.",)})
     deps = Dependencies(agent=agent, packs=[pack])
     async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
-        session = await start(client, task_queue, "session-step-limit", max_steps=3)
+        session = await start(client, task_queue, "session-step-limit")
         async with asyncio.timeout(10):  # a Session that repairs forever fails here, not hangs
             outcome = await session.outcome()
 
-    # three agent steps, then it gave up: nothing submitted, nothing committed
+    # every allowed agent step, then it gave up: nothing submitted, nothing committed
     assert (outcome, len(agent.requests), ledger.entries) == (
         SessionOutcome(phase=Phase.GAVE_UP, receipt=None),
-        3,
+        MAX_STEPS,
         [],
     )
 
@@ -489,19 +490,19 @@ async def test_guidance_is_given_once_not_repeated_on_later_steps(client: Client
 
 
 @pytest.mark.parametrize(
-    ("work", "max_steps"),
-    [(NOTE, 3), (BLANK_NOTE, 3), (BLANK_NOTE, 1)],
+    ("work", "step"),
+    [(NOTE, 1), (BLANK_NOTE, 1), (BLANK_NOTE, MAX_STEPS)],
     ids=["passing-check", "failing-check", "failing-check-at-limit"],
 )
 async def test_a_cancel_during_checks_ends_without_another_step_or_submission(
-    client: Client, work: Work, max_steps: int
+    client: Client, work: Work, step: int
 ) -> None:
     ledger = Ledger()
     agent = FakeAgent(script=[work])
-    pack = PausingChecksPack(ledger, failures={"": ("The note is empty.",)})
+    pack = PausingChecksPack(ledger, failures={"": ("The note is empty.",)}, pause_at=step)
     deps = Dependencies(agent=agent, packs=[pack])
     async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
-        session = await start(client, task_queue, "session-cancel-checks", max_steps=max_steps)
+        session = await start(client, task_queue, "session-cancel-checks")
         await pack.started.wait()
         await session.cancel()
         pack.finish.set()
@@ -511,8 +512,8 @@ async def test_a_cancel_during_checks_ends_without_another_step_or_submission(
 
     assert (outcome, status, len(agent.requests), ledger.entries) == (
         SessionOutcome(phase=Phase.CANCELLED, receipt=None),
-        SessionStatus(phase=Phase.CANCELLED, step=1, submission=0),
-        1,
+        SessionStatus(phase=Phase.CANCELLED, step=step, submission=0),
+        step,
         [],
     )
 
@@ -525,7 +526,7 @@ async def test_guidance_during_checks_reaches_the_next_repair_once_in_arrival_or
     pack = PausingChecksPack(ledger, failures={"": ("The note is empty.",)})
     deps = Dependencies(agent=agent, packs=[pack])
     async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
-        session = await start(client, task_queue, "session-steer-checks", max_steps=3)
+        session = await start(client, task_queue, "session-steer-checks")
         await pack.started.wait()
         await session.steer("Use metric units.")
         await session.steer("Name each owner.")
@@ -548,11 +549,12 @@ async def test_guidance_during_checks_reaches_the_next_repair_once_in_arrival_or
 async def test_passing_checks_on_the_final_allowed_step_can_still_be_approved(
     client: Client,
 ) -> None:
-    agent = FakeAgent(script=[NOTE])
+    agent = FakeAgent(script=[BLANK_NOTE] * (MAX_STEPS - 1) + [NOTE])
     ledger = Ledger()
-    deps = Dependencies(agent=agent, packs=[NotesPack(ledger)])
+    pack = CheckedNotesPack(ledger, failures={"": ("The note is empty.",)})
+    deps = Dependencies(agent=agent, packs=[pack])
     async with session_worker(client, deps, workflow_runner=SANDBOX) as task_queue:
-        session = await start(client, task_queue, "session-final-step", max_steps=1)
+        session = await start(client, task_queue, "session-final-step")
         await until_awaiting_review(session)
         await session.review(APPROVAL)
         outcome = await session.outcome()
@@ -560,8 +562,8 @@ async def test_passing_checks_on_the_final_allowed_step_can_still_be_approved(
 
     assert (outcome.phase, status, len(agent.requests), ledger.entries) == (
         Phase.APPROVED,
-        SessionStatus(phase=Phase.APPROVED, step=2, submission=1),
-        1,
+        SessionStatus(phase=Phase.APPROVED, step=MAX_STEPS + 1, submission=1),
+        MAX_STEPS,
         [NOTE],
     )
 

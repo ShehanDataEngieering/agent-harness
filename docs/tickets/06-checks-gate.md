@@ -14,9 +14,11 @@ The Pack's Checks run after each agent step. A failing Check sends the failures 
 
 ## Notes
 
-Step accounting and the configurable agent step limit are defined in the [spec's implementation decisions](../spec.md#implementation-decisions).
+Step accounting and the fixed limit of 30 agent steps per Session are defined in the [spec's implementation decisions](../spec.md#implementation-decisions).
 
 ## Mutation notes
+
+Historical, before integrating main. Current results are under Integration validation.
 
 mutmut 3.8: 35 mutants, 34 killed; `out_of_steps` (`>=` → `>`) is killed. The survivor is the `SessionWorkflow.__init__` `self._phase = None` mutant, equivalent as explained in ticket 02.
 
@@ -26,7 +28,7 @@ mutmut 3.8: 35 mutants, 34 killed; `out_of_steps` (`>=` → `>`) is killed. The 
 
 ## Integration validation
 
-Integrated main at `e4a62ffd`, preserving Cancel, typed steering Signals, Review refusals, and all existing acceptance tests. Resolved conflicts in the ADR, models, workflow, test support, Payload examples, and Session tests.
+Current results, measured before the step limit was fixed at 30. Integrated main at `e4a62ffd`, preserving Cancel, typed steering Signals, Review refusals, and all existing acceptance tests. Resolved conflicts in the ADR, models, workflow, test support, Payload examples, and Session tests.
 
 - Reproduced three Cancel-during-Checks regressions before the fix: passing work created a Submission, failing work started another agent step, and failure at the step limit returned `gave_up`. Checking Cancel after the Check activity now ends the Session as cancelled before repair or Submission; all three regression cases pass.
 - Added Session-seam coverage for ordered, once-only steering during repeated Check repairs; Review refusal while Checks run; and Approval after passing Checks on the final allowed step.
